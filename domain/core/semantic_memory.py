@@ -35,41 +35,65 @@ class SemanticMemory:
         )
         return event_id
 
-    def query_context(self, query_text: str, n_results: int = 3, context_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def query_context(self, query_text: str, n_results: int = 3, context_id: Optional[str] = None, min_similarity: float = 0.4) -> List[Dict[str, Any]]:
         """
         Performs semantic search to retrieve relevant past events, optionally scoped to a bounded context.
+        Includes a strict manual filter and a similarity threshold to prevent context leakage 
+        and semantic noise.
         """
-        where_clause = {"context_id": context_id} if context_id else None
+        # We perform a wider semantic search to get candidates,
+        # but we do NOT rely on ChromaDB's 'where' clause as the sole source of truth.
+        search_limit = n_results * 5
         
         results = self.collection.query(
             query_texts=[query_text],
-            n_results=n_results,
-            where=where_clause
+            n_results=search_limit
         )
         
         formatted_results = []
         for i in range(len(results['ids'][0])):
+            metadata = results['metadatas'][0][i]
+            distance = results['distances'][0][i] if 'distances' in results else None
+            
+            # STAGE 1: Strict Context Validation
+            if context_id and metadata.get("context_id") != context_id:
+                continue
+
+            # STAGE 2: Semantic Relevance Guard
+            if distance is not None:
+                similarity = 1 / (1 + distance)
+                if similarity < min_similarity:
+                    continue
+
             formatted_results.append({
                 "id": results['ids'][0][i],
                 "text": results['documents'][0][i],
-                "metadata": results['metadatas'][0][i],
-                "distance": results['distances'][0][i] if 'distances' in results else None
+                "metadata": metadata,
+                "distance": distance
             })
+            
+            if len(formatted_results) >= n_results:
+                break
+                
         return formatted_results
 
     def list_events(self, limit: int = 10, context_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Lists the most recent events, optionally scoped to a bounded context.
         """
-        where_clause = {"context_id": context_id} if context_id else None
-        
-        results = self.collection.get(limit=limit, where=where_clause)
+        # Note: We do not use the 'where' clause here to ensure we get the absolute latest,
+        # then we manually filter.
+        results = self.collection.get(limit=limit)
         formatted_results = []
         for i in range(len(results['ids'])):
+            metadata = results['metadatas'][i]
+            if context_id and metadata.get("context_id") != context_id:
+                continue
+                
             formatted_results.append({
                 "id": results['ids'][i],
                 "text": results['documents'][i],
-                "metadata": results['metadatas'][i]
+                "metadata": metadata
             })
         return formatted_results
 
