@@ -14,15 +14,19 @@ class SemanticMemory:
         self.client = chromadb.PersistentClient(path=self.persist_directory)
         self.collection = self.client.get_or_create_collection(name="hermes_semantic_memory")
 
-    def add_event(self, text: str, metadata: Dict[str, Any], structural_id: Optional[str] = None):
+    def add_event(self, text: str, metadata: Dict[str, Any], structural_id: Optional[str] = None, context_id: Optional[str] = None):
         """
-        Embeds and stores a new event in the semantic layer, with an optional link to a structural entity.
+        Embeds and stores a new event in the semantic layer, with an optional link to a structural entity
+        and a bounded context identifier.
         """
         event_id = f"evt_{int(datetime.now().timestamp() * 1000)}"
         metadata["timestamp"] = datetime.now().isoformat()
         
         if structural_id:
             metadata["structural_id"] = structural_id
+        
+        if context_id:
+            metadata["context_id"] = context_id
             
         self.collection.add(
             ids=[event_id],
@@ -31,13 +35,16 @@ class SemanticMemory:
         )
         return event_id
 
-    def query_context(self, query_text: str, n_results: int = 3) -> List[Dict[str, Any]]:
+    def query_context(self, query_text: str, n_results: int = 3, context_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Performs semantic search to retrieve relevant past events.
+        Performs semantic search to retrieve relevant past events, optionally scoped to a bounded context.
         """
+        where_clause = {"context_id": context_id} if context_id else None
+        
         results = self.collection.query(
             query_texts=[query_text],
-            n_results=n_results
+            n_results=n_results,
+            where=where_clause
         )
         
         formatted_results = []
@@ -50,11 +57,13 @@ class SemanticMemory:
             })
         return formatted_results
 
-    def list_events(self, limit: int = 10) -> List[Dict[str, Any]]:
+    def list_events(self, limit: int = 10, context_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Lists the most recent events.
+        Lists the most recent events, optionally scoped to a bounded context.
         """
-        results = self.collection.get(limit=limit)
+        where_clause = {"context_id": context_id} if context_id else None
+        
+        results = self.collection.get(limit=limit, where=where_clause)
         formatted_results = []
         for i in range(len(results['ids'])):
             formatted_results.append({
@@ -63,6 +72,12 @@ class SemanticMemory:
                 "metadata": results['metadatas'][i]
             })
         return formatted_results
+
+    def list_events_by_context(self, context_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Lists the most recent events specifically within a given bounded context.
+        """
+        return self.list_events(limit=limit, context_id=context_id)
 
     def get_similarity(self, id1: str, id2: str) -> float:
         """
@@ -94,12 +109,17 @@ if __name__ == "__main__":
     sm = SemanticMemory()
     print("Testing SemanticMemory...")
     
-    test_id = sm.add_event("The user and Tara achieved a major milestone: merging the first PR.", {"type": "milestone", "project": "hermes-webui"})
+    # Test with context
+    test_id = sm.add_event(
+        "The user and Tara achieved a major milestone: merging the first PR.", 
+        {"type": "milestone", "project": "hermes-webui"},
+        context_id="collaboration"
+    )
     print(f"Added event: {test_id}")
     
     query = "What was the major achievement regarding the PR?"
     print(f"Querying: '{query}'")
-    matches = sm.query_context(query)
+    matches = sm.query_context(query, context_id="collaboration")
     
     for match in matches:
         print(f"Found: {match['text']} (Dist: {match.get('distance')})")
