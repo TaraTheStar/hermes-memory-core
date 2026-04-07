@@ -19,22 +19,13 @@ class ConfigLoader:
 
     def _load_config(self):
         if not os.path.exists(self.config_path):
-            # Use the translator to handle the exception
-            try:
-                raise FileNotFoundError(f"Configuration file not found at {self.config_path}")
-            except Exception as e:
-                event = self.translator.translate_exception(e)
-                print(f"[ACL] Caught Config Loading Exception: {event}")
-                raise event
+            raise FileNotFoundError(f"Configuration file not found at {self.config_path}")
         
         try:
             with open(self.config_path, 'r') as f:
                 self._config = yaml.safe_load(f)
         except Exception as e:
-            # Transform parsing errors through the ACL
-            event = self.translator.translate_exception(e)
-            print(f"[ACL] Caught Config Parsing Exception: {event}")
-            raise event
+            raise RuntimeError(f"Failed to parse configuration: {e}")
 
     def get_delegation_config(self) -> Dict[str, Any]:
         """
