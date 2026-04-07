@@ -66,7 +66,7 @@ class TestSynthesisEngine(unittest.TestCase):
             metadata={"type": "learning", "timestamp": now.isoformat()}
         )
         result = self.engine.run_temporal_correlation_scan()
-        self.assertGreaterEqual(result, 0)
+        self.assertGreaterEqual(result, 1, "Expected at least one edge from skill-event correlation")
 
     def test_incremental_scan(self):
         """Second scan should not reprocess old events."""

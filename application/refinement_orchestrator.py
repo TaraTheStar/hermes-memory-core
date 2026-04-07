@@ -99,7 +99,11 @@ class RefinementOrchestrator:
         logger.info("Executing %s...", proposal.proposal_type)
         with self.ledger.session_scope() as session:
             if proposal.proposal_type == "PRUNE_EDGE":
-                u, v = proposal.target_id.split("->")
+                parts = proposal.target_id.split("->", 1)
+                if len(parts) != 2:
+                    logger.warning("Malformed edge target_id: %s", proposal.target_id)
+                    return
+                u, v = parts
                 session.query(RelationalEdge).filter(
                     (RelationalEdge.source_id == u) & (RelationalEdge.target_id == v)
                 ).delete()

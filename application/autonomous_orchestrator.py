@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Dict, Any, List, Optional, Type
+from typing import Dict, Any, List, Optional, Set, Type
 from application.orchestrator import Orchestrator
 from domain.core.agent import HermesAgent, AgentStatus
 from domain.core.ports import GoalRunner
@@ -15,7 +15,7 @@ class AutonomousOrchestrator(Orchestrator, GoalRunner):
     An extension of the Orchestrator that can initiate its own investigation goals
     based on environmental stimuli (anomalies, new memory, structural changes).
     """
-    def __init__(self, registry: Dict[str, Type[HermesAgent]], llm_interface=None, 
+    def __init__(self, registry: Dict[str, Type[HermesAgent]], llm_interface=None,
                  semantic_memory: Optional[SemanticMemory] = None,
                  structural_ledger: Optional[StructuralLedger] = None,
                  insight_trigger: Optional[InsightTrigger] = None):
@@ -25,6 +25,7 @@ class AutonomousOrchestrator(Orchestrator, GoalRunner):
         self.insight_trigger = insight_trigger
         self._monitoring_task: Optional[asyncio.Task] = None
         self._is_running = False
+        self._processed_event_ids: Set[str] = set()
 
     async def start_monitoring(self, interval_seconds: int = 300, context: Dict[str, Any] = None):
         """Starts the background monitoring loop."""
@@ -59,14 +60,16 @@ class AutonomousOrchestrator(Orchestrator, GoalRunner):
 
                 # 2. Check for new semantic intelligence
                 if self.semantic_memory:
-                    # In a real system, we'd use a more sophisticated 'has_new_events' check
-                    # For demonstration: trigger a goal if a specific keyword appears
                     recent_events = self.semantic_memory.list_events(limit=5)
                     if recent_events:
                         for event in recent_events:
+                            event_id = event.get('id')
+                            if event_id in self._processed_event_ids:
+                                continue
                             if "milestone" in event['metadata'].get('type', '') or "integration" in event['text'].lower():
                                 goal = f"Investigate the recent semantic milestone: {event['text']}"
                                 logger.info(f"Trigger detected! New Goal: {goal}")
+                                self._processed_event_ids.add(event_id)
                                 await self.run_goal(goal, context)
                                 break
 

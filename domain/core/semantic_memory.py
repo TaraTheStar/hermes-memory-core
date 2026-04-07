@@ -79,12 +79,6 @@ class SemanticMemory:
                 
         return formatted_results
 
-    def query_context(self, query_text: str, n_results: int = 3, context_id: Optional[str] = None, min_similarity: float = 0.4) -> List[Dict[str, Any]]:
-        """
-        Alias for query to maintain compatibility.
-        """
-        return self.query(query_text, n_results=n_results, context_id=context_id, min_similarity=min_similarity)
-
     def list_events(self, limit: int = 10, context_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Lists the most recent events, optionally scoped to a bounded context.

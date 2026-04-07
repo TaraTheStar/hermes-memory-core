@@ -27,7 +27,7 @@ class InsightSynthesizer:
         narrative = self.llm.complete(prompt, system_prompt=system_prompt)
 
         # 3. Assemble the final report
-        return f"# 🌌 State of the Soul: Knowledge Graph Insights\n\n{narrative}"
+        return f"# State of the Soul: Knowledge Graph Insights\n\n{narrative}"
 
     def _construct_prompt(self, metrics: Dict[str, Dict[str, float]], communities: List[Set[str]], node_metadata: Dict[str, Any]) -> str:
         """

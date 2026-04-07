@@ -1,10 +1,11 @@
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 from domain.supporting.monitor_models import AnomalyEvent
 from domain.core.ports import GoalRunner
 from domain.supporting.ledger import StructuralLedger
+
 
 class InsightTrigger:
     """
@@ -15,10 +16,11 @@ class InsightTrigger:
         self.ledger = StructuralLedger(structural_db_path)
         self.goal_runner = goal_runner
 
-    async def process_new_anomalies(self, context: Dict[str, Any]):
+    async def process_new_anomalies(self, context: Optional[Dict[str, Any]] = None):
         """
         Fetches unhandled anomalies and triggers orchestration for each.
         """
+        context = context or {}
         with self.ledger.session_scope() as session:
             unprocessed = session.query(AnomalyEvent).filter(
                 AnomalyEvent.processed == False

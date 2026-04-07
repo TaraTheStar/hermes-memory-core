@@ -6,8 +6,10 @@ from typing import List, Dict, Any, Optional
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session as SASession
-from domain.core.models import Base, Event, Project, Milestone, Skill, IdentityMarker, RelationalEdge
+from domain.core.models import Base, Project, Milestone, Skill, IdentityMarker, RelationalEdge
 from infrastructure.paths import default_structural_db
+# Import monitoring models so their tables are registered on Base.metadata
+import domain.supporting.monitor_models  # noqa: F401
 
 class StructuralLedger:
     def __init__(self, db_path: str = None):

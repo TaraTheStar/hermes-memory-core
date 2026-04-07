@@ -30,24 +30,25 @@ class RefinementEngine:
     def analyze_for_refinement(self, context_id: str = "global") -> List[RefinementProposal]:
         """
         Scans the graph for structural bloat or redundancy using context-aware thresholds.
+        Detected anomalies are persisted as AnomalyEvent rows so InsightTrigger can pick them up.
         """
         logger.info("Analyzing graph structure for context: %s...", context_id)
         self.analyzer.build_graph()
         graph = self.analyzer.graph
         proposals = []
+        detected_events = []
 
         # 1. Detect Bloat: Overly large communities that need condensation
         communities = self.analyzer.detect_communities()
         for i, community in enumerate(communities):
-            # We evaluate community size as a metric
             event = self.detector.evaluate_metric(
-                MetricType.COMMUNITY_SIZE, 
-                float(len(community)), 
+                MetricType.COMMUNITY_SIZE,
+                float(len(community)),
                 context_id=context_id
             )
-            
+
             if event:
-                # Propose a 'Merge' or 'Condensation' into a concept node
+                detected_events.append(event)
                 proposal = RefinementProposal(
                     proposal_type="MERGE_COMMUNITY",
                     target_id=f"community_{i}",
@@ -60,12 +61,13 @@ class RefinementEngine:
         for u, v, data in graph.edges(data=True):
             weight = data.get('weight', 1.0)
             event = self.detector.evaluate_metric(
-                MetricType.EDGE_WEIGHT, 
-                weight, 
+                MetricType.EDGE_WEIGHT,
+                weight,
                 context_id=context_id
             )
-            
+
             if event:
+                detected_events.append(event)
                 proposal = RefinementProposal(
                     proposal_type="PRUNE_EDGE",
                     target_id=f"{u}->{v}",
@@ -77,12 +79,13 @@ class RefinementEngine:
         # 3. Detect Complexity Wall: High Global Density
         density = nx.density(graph)
         event = self.detector.evaluate_metric(
-            MetricType.GRAPH_DENSITY, 
-            density, 
+            MetricType.GRAPH_DENSITY,
+            density,
             context_id=context_id
         )
-        
+
         if event:
+            detected_events.append(event)
             proposal = RefinementProposal(
                 proposal_type="GLOBAL_REBALANCE",
                 target_id="graph_root",
@@ -91,4 +94,15 @@ class RefinementEngine:
             )
             proposals.append(proposal)
 
+        # Persist detected anomalies so InsightTrigger can find them.
+        if detected_events:
+            self._persist_anomaly_events(detected_events)
+
         return proposals
+
+    def _persist_anomaly_events(self, events) -> None:
+        """Write PatternDetectedEvents as AnomalyEvent rows."""
+        from domain.core.anomaly_detector import ContextualAnomalyDetector
+        with self.ledger.session_scope() as session:
+            for event in events:
+                session.add(ContextualAnomalyDetector.to_anomaly_event(event))

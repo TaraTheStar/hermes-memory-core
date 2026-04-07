@@ -112,7 +112,7 @@ async def run_stress_test():
     print("\n[5/6] Running InsightTrigger...")
     # We need to manualy call the trigger's logic if it's not polling
     # For the test, we'll pass the anomalies to a new test method or just manually trigger
-    await trigger.process_new_anomalies()
+    await trigger.process_new_anomalies({})
 
     # 6. Final Verification
     print("\n[6/6] Verifying results...")

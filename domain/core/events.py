@@ -1,3 +1,4 @@
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -19,10 +20,8 @@ class DomainEvent:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
-        # Simple validation for the purpose of this implementation
         if not self.event_id:
-            # In a real system, we'd use uuid.uuid4()
-            object.__setattr__(self, 'event_id', f"{self.source}-{self.timestamp.timestamp()}")
+            object.__setattr__(self, 'event_id', str(uuid.uuid4()))
 
 @dataclass(frozen=True)
 class InfrastructureErrorEvent(DomainEvent):

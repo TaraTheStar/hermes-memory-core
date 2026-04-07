@@ -1,7 +1,17 @@
+import uuid
 from typing import Dict, Any, Optional, List
 import math
 from domain.core.anomaly_config import MetricType, ThresholdProfile
 from domain.core.events import DomainEvent, EventSeverity, PatternDetectedEvent
+
+
+_SEVERITY_MAP = {
+    EventSeverity.INFO: "low",
+    EventSeverity.WARNING: "medium",
+    EventSeverity.ERROR: "high",
+    EventSeverity.CRITICAL: "critical",
+}
+
 
 class ContextualAnomalyDetector:
     """
@@ -100,3 +110,15 @@ class ContextualAnomalyDetector:
             )
 
         return None
+
+    @staticmethod
+    def to_anomaly_event(event: PatternDetectedEvent) -> "AnomalyEvent":
+        """Convert a domain PatternDetectedEvent into a persistable AnomalyEvent."""
+        from domain.supporting.monitor_models import AnomalyEvent
+        return AnomalyEvent(
+            id=str(uuid.uuid4()),
+            anomaly_type=event.pattern_type,
+            description=f"{event.pattern_type} detected by {event.source}",
+            severity=_SEVERITY_MAP.get(event.severity, "medium"),
+            trigger_data=dict(event.metadata),
+        )

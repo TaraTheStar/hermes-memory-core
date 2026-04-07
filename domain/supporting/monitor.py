@@ -2,39 +2,21 @@ import datetime
 import logging
 import uuid
 import statistics
-from contextlib import contextmanager
 from typing import Dict, List, Any, Optional, Set
 
 logger = logging.getLogger(__name__)
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from domain.core.models import Base
 from domain.core.analyzer import GraphAnalyzer
 from domain.supporting.monitor_models import GraphSnapshot, AnomalyEvent
+from domain.supporting.ledger import StructuralLedger
+
 
 class StateTracker:
     """
     Responsible for periodic snapshotting of the graph's structural state.
     """
     def __init__(self, structural_db_path: str):
-        self.engine = create_engine(f"sqlite:///{structural_db_path}")
-        from domain.supporting.monitor_models import MonitoringBase
-        MonitoringBase.metadata.create_all(self.engine)
-
-        self.Session = sessionmaker(bind=self.engine)
+        self.ledger = StructuralLedger(structural_db_path)
         self.analyzer = GraphAnalyzer(structural_db_path)
-
-    @contextmanager
-    def _session_scope(self):
-        session = self.Session()
-        try:
-            yield session
-            session.commit()
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            session.close()
 
     def capture_snapshot(self) -> GraphSnapshot:
         logger.info("Capturing graph snapshot...")
@@ -58,39 +40,29 @@ class StateTracker:
             metadata_tags={"node_count": nodes_count, "edge_count": edges_count}
         )
 
-        with self._session_scope() as session:
+        with self.ledger.session_scope() as session:
             session.add(snapshot)
             logger.info("Snapshot saved: %s (Nodes: %d, Communities: %d)", snapshot.id, nodes_count, len(communities))
-            return snapshot
+            # Expunge so the object is usable after the session closes.
+            session.flush()
+            session.expunge(snapshot)
+
+        return snapshot
+
 
 class AnomalyDetector:
     """
     Compares the current snapshot against historical data to find significant patterns.
     """
     def __init__(self, structural_db_path: str, sensitivity: float = 2.0):
-        self.engine = create_engine(f"sqlite:///{structural_db_path}")
-        from domain.supporting.monitor_models import MonitoringBase
-        MonitoringBase.metadata.create_all(self.engine)
-        self.Session = sessionmaker(bind=self.engine, expire_on_commit=False)
+        self.ledger = StructuralLedger(structural_db_path)
         self.sensitivity = sensitivity
-
-    @contextmanager
-    def _session_scope(self):
-        session = self.Session()
-        try:
-            yield session
-            session.commit()
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            session.close()
 
     def detect_anomalies(self, current_snapshot: GraphSnapshot) -> List[AnomalyEvent]:
         logger.info("Scanning for structural anomalies...")
         anomalies = []
 
-        with self._session_scope() as session:
+        with self.ledger.session_scope() as session:
             history = session.query(GraphSnapshot).filter(
                 GraphSnapshot.timestamp < current_snapshot.timestamp
             ).order_by(GraphSnapshot.timestamp.desc()).all()

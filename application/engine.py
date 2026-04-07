@@ -2,7 +2,6 @@ import os
 from typing import List, Dict, Any, Optional
 from domain.core.semantic_memory import SemanticMemory
 from domain.core.models import Event, Project, Milestone, Skill, IdentityMarker, RelationalEdge
-from infrastructure.logging_config import configure_logging
 from infrastructure.paths import default_semantic_dir, default_structural_db
 
 # Note: In a real deployment, EventExtractor would call an LLM API.
@@ -70,9 +69,6 @@ class EventExtractor:
                 ))
         return events
 
-configure_logging()
-
-
 class MemoryEngine:
     """
     The main orchestrator for the Hermes Memory Engine.
@@ -132,7 +128,7 @@ class MemoryEngine:
     }
 
     def query(self, query_text: str, n_results: int = 3) -> List[Dict[str, Any]]:
-        semantic_results = self.semantic_memory.query_context(query_text, n_results=n_results)
+        semantic_results = self.semantic_memory.query(query_text, n_results=n_results)
         enriched_results = []
 
         with self.ledger.session_scope() as session:

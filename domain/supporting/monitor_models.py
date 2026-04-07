@@ -1,12 +1,12 @@
 import datetime
 from typing import Dict, List, Any, Optional
-from sqlalchemy import Column, String, Float, DateTime, JSON, Integer, Boolean, create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import Column, String, Float, DateTime, JSON, Integer, Boolean
+from domain.core.models import Base
 
-# New Base for Monitoring models
-MonitoringBase = declarative_base()
+# Unified under the main Base so all tables are created together.
+MonitoringBase = Base
 
-class GraphSnapshot(MonitoringBase):
+class GraphSnapshot(Base):
     """
     Stores a point-in-time 'fingerprint' of the knowledge graph's structure.
     """
@@ -26,7 +26,7 @@ class GraphSnapshot(MonitoringBase):
     # Metadata
     metadata_tags = Column(JSON)
 
-class AnomalyEvent(MonitoringBase):
+class AnomalyEvent(Base):
     """
     Records detected structural anomalies for auditing and trigger history.
     """
