@@ -1,9 +1,12 @@
+import logging
 from typing import List, Dict, Any, Optional
 from domain.supporting.ledger import StructuralLedger
 from application.orchestrator import Orchestrator
 from domain.core.refinement_engine import RefinementEngine, RefinementProposal
 from domain.core.models import Skill, RelationalEdge
 from domain.core.anomaly_detector import ContextualAnomalyDetector
+
+logger = logging.getLogger(__name__)
 
 class RefinementOrchestrator:
     """
@@ -23,14 +26,14 @@ class RefinementOrchestrator:
         """
         proposals = self.engine.analyze_for_refinement()
         if not proposals:
-            print("[RefinementOrchestrator] No refinement opportunities detected.")
+            logger.info("No refinement opportunities detected.")
             return 0
 
-        print(f"[RefinementOrchestrator] Found {len(proposals)} proposals. Starting audit cycle...")
+        logger.info("Found %d proposals. Starting audit cycle...", len(proposals))
         executed_count = 0
 
         for proposal in proposals:
-            print(f"\n[RefinementOrchestrator] Processing: {proposal.proposal_type} ({proposal.description})")
+            logger.info("Processing: %s (%s)", proposal.proposal_type, proposal.description)
             
             # 1. Audit Phase: Delegate to an Auditor to ensure we don't break the graph
             audit_goal = f"Audit the following proposed graph change for structural integrity: {proposal.description}. Data: {proposal.data}"
@@ -38,12 +41,12 @@ class RefinementOrchestrator:
             
             # Check if the Auditor approved (Simulated logic for prototype)
             if self._is_approved(audit_result):
-                print(f"[RefinementOrchestrator] Proposal APPROVED by Auditor.")
+                logger.info("Proposal APPROVED by Auditor.")
                 # 2. Execution Phase
                 await self._execute_proposal(proposal)
                 executed_count += 1
             else:
-                print(f"[RefinementOrchestrator] Proposal REJECTED by Auditor. Skipping.")
+                logger.info("Proposal REJECTED by Auditor. Skipping.")
 
         return executed_count
 
@@ -58,7 +61,7 @@ class RefinementOrchestrator:
         """
         Applies the change to the Structural Ledger.
         """
-        print(f"[RefinementOrchestrator] Executing {proposal.proposal_type}...")
+        logger.info("Executing %s...", proposal.proposal_type)
         session = self.ledger.Session()
         try:
             if proposal.proposal_type == "PRUNE_EDGE":
@@ -67,19 +70,19 @@ class RefinementOrchestrator:
                 session.query(RelationalEdge).filter(
                     (RelationalEdge.source_id == u) & (RelationalEdge.target_id == v)
                 ).delete()
-                print(f"  -> Edge {u} <-> {v} pruned.")
+                logger.info("Edge %s <-> %s pruned.", u, v)
 
             elif proposal.proposal_type == "MERGE_COMMUNITY":
                 # Prototype logic: We don't actually implement the complex merge logic yet,
                 # we just log that the intention was captured.
-                print(f"  -> [SIMULATED] Community condensation triggered for {proposal.target_id}.")
+                logger.info("[SIMULATED] Community condensation triggered for %s.", proposal.target_id)
 
             elif proposal.proposal_type == "GLOBAL_REBALANCE":
-                print(f"  -> [SIMULATED] Global rebalancing triggered.")
+                logger.info("[SIMULATED] Global rebalancing triggered.")
 
             session.commit()
         except Exception as e:
-            print(f"[RefinementOrchestrator] Execution failed: {e}")
+            logger.error("Execution failed: %s", e)
             session.rollback()
         finally:
             session.close()

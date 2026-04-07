@@ -19,7 +19,10 @@ class ConfigLoader:
 
     def _load_config(self):
         if not os.path.exists(self.config_path):
-            raise FileNotFoundError(f"Configuration file not found at {self.config_path}")
+            raise FileNotFoundError(
+                f"Configuration file not found at {self.config_path}. "
+                f"Set the HERMES_CONFIG_PATH environment variable to specify a custom path."
+            )
         
         try:
             with open(self.config_path, 'r') as f:

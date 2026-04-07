@@ -4,6 +4,8 @@ from typing import Dict, Any, List, Optional, Type
 from domain.core.agent import HermesAgent, AgentStatus, AgentTask, AgentResult
 from domain.core.ports.ingestor import IntelligenceIngestor
 
+logger = logging.getLogger(__name__)
+
 class Orchestrator:
     """
     The central authority that decomposes goals and manages agent lifecycles.
@@ -22,7 +24,7 @@ class Orchestrator:
         In a full implementation, this uses an LLM with a strict JSON schema.
         For this implementation, we provide a robust simulated decomposition.
         """
-        print(f"[Orchestrator] Decomposing goal: '{goal}'")
+        logger.info("Decomposing goal: '%s'", goal)
         
         # Simulated LLM-driven decomposition logic
         goal_lower = goal.lower()
@@ -62,7 +64,7 @@ class Orchestrator:
         # Convert task dicts into formal AgentTask objects
         tasks = [AgentTask(t["goal"], t["constraints"]) for t in tasks_data]
         
-        print(f"[Orchestrator] Dispatched {len(tasks)} sub-tasks.")
+        logger.info("Dispatched %d sub-tasks.", len(tasks))
         
         # Prepare the agent coroutines for parallel execution
         agent_tasks = []
@@ -75,12 +77,12 @@ class Orchestrator:
                 agent_instance = self.registry[role](agent_id, role, self.llm)
                 self.active_agents.append(agent_instance)
                 
-                print(f"[Orchestrator] Spawning {agent_instance.agent_id} ({role})...")
+                logger.info("Spawning %s (%s)...", agent_instance.agent_id, role)
                 
                 # Schedule the agent's run method
                 agent_tasks.append(self._execute_agent(agent_instance, task, context))
             else:
-                print(f"[Orchestrator] Unknown role: {role}")
+                logger.warning("Unknown role: %s", role)
 
         # Execute all agents concurrently
         raw_results = await asyncio.gather(*agent_tasks)
@@ -90,13 +92,13 @@ class Orchestrator:
         
         # --- NEW: Recursive Learning Step ---
         if self.ingestor:
-            print(f"[Orchestrator] Triggering Intelligence Ingestion for goal: '{goal}'")
+            logger.info("Triggering Intelligence Ingestion for goal: '%s'", goal)
             # We pass the final_report and the context to the ingestor
             success = await self.ingestor.ingest(final_report, context)
             if success:
-                print(f"[Orchestrator] 🧠 Learning successful: Findings ingested into Semantic Memory.")
+                logger.info("Learning successful: Findings ingested into Semantic Memory.")
             else:
-                print(f"[Orchestrator] ⚠️ Learning failed: Ingestion unsuccessful.")
+                logger.warning("Learning failed: Ingestion unsuccessful.")
         # ------------------------------------
         
         return final_report
@@ -106,7 +108,7 @@ class Orchestrator:
         try:
             return await agent.run(task, context)
         except Exception as e:
-            print(f"[Orchestrator] Fatal error in agent {agent.agent_id}: {e}")
+            logger.error("Fatal error in agent %s: %s", agent.agent_id, e)
             return AgentResult(
                 finding=f"Agent failure: {str(e)}",
                 confidence=0.0,
@@ -118,7 +120,7 @@ class Orchestrator:
         """
         Combines the findings from multiple agents into a single, coherent narrative.
         """
-        print("[Orchestrator] Synthesizing agent findings...")
+        logger.info("Synthesizing agent findings...")
         
         findings = []
         total_confidence = 0.0

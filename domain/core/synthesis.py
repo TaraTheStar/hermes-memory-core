@@ -1,9 +1,12 @@
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from domain.core.semantic_memory import SemanticMemory
 from domain.supporting.ledger import StructuralLedger
 from domain.core.models import Project, Milestone, Skill, IdentityMarker, RelationalEdge
+
+logger = logging.getLogger(__name__)
 
 class SynthesisEngine:
     def __init__(self, semantic_dir: str, structural_db_path: str):
@@ -31,14 +34,21 @@ class SynthesisEngine:
             events = self.semantic_memory.list_events(limit=100)
             
             for event in events:
-                event_time_raw = datetime.fromisoformat(event['metadata']['timestamp'])
+                try:
+                    ts_raw = event.get('metadata', {}).get('timestamp')
+                    if not ts_raw:
+                        continue
+                    event_time_raw = datetime.fromisoformat(ts_raw)
+                except (ValueError, TypeError) as e:
+                    logger.warning("Skipping event with invalid timestamp: %s", e)
+                    continue
                 # Normalize to UTC-aware datetime for consistent comparison
                 event_time = event_time_raw if event_time_raw.tzinfo else event_time_raw.replace(tzinfo=timezone.utc)
 
                 # Skip events already processed in a previous scan
                 if self._last_temporal_scan and event_time <= self._last_temporal_scan:
                     continue
-                event_text = event['text'].lower()
+                event_text = event.get('text', '').lower()
                 
                 # Check against milestones
                 for ms in milestones:
@@ -105,15 +115,26 @@ class SynthesisEngine:
                 for j in range(i + 1, len(events)):
                     # Skip pairs where both events were already scanned
                     if self._last_cooccurrence_scan:
-                        t_i = datetime.fromisoformat(events[i]['metadata']['timestamp'])
-                        t_j = datetime.fromisoformat(events[j]['metadata']['timestamp'])
-                        t_i = t_i if t_i.tzinfo else t_i.replace(tzinfo=timezone.utc)
-                        t_j = t_j if t_j.tzinfo else t_j.replace(tzinfo=timezone.utc)
-                        if t_i <= self._last_cooccurrence_scan and t_j <= self._last_cooccurrence_scan:
+                        try:
+                            ts_i = events[i].get('metadata', {}).get('timestamp')
+                            ts_j = events[j].get('metadata', {}).get('timestamp')
+                            if ts_i and ts_j:
+                                t_i = datetime.fromisoformat(ts_i)
+                                t_j = datetime.fromisoformat(ts_j)
+                                t_i = t_i if t_i.tzinfo else t_i.replace(tzinfo=timezone.utc)
+                                t_j = t_j if t_j.tzinfo else t_j.replace(tzinfo=timezone.utc)
+                                if t_i <= self._last_cooccurrence_scan and t_j <= self._last_cooccurrence_scan:
+                                    continue
+                        except (ValueError, TypeError) as e:
+                            logger.warning("Skipping cooccurrence pair due to bad timestamp: %s", e)
                             continue
 
                     e1, e2 = events[i], events[j]
-                    similarity = self.semantic_memory.get_similarity(e1['id'], e2['id'])
+                    try:
+                        similarity = self.semantic_memory.get_similarity(e1['id'], e2['id'])
+                    except Exception as e:
+                        logger.warning("Failed to compute similarity for %s <-> %s: %s", e1['id'], e2['id'], e)
+                        continue
                     
                     if similarity >= similarity_threshold:
                         existing = session.query(RelationalEdge).filter_by(

@@ -1,7 +1,10 @@
 import datetime
+import logging
 import uuid
 import statistics
 from typing import Dict, List, Any, Optional, Set
+
+logger = logging.getLogger(__name__)
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from domain.core.models import Base
@@ -21,7 +24,7 @@ class StateTracker:
         self.analyzer = GraphAnalyzer(structural_db_path)
 
     def capture_snapshot(self) -> GraphSnapshot:
-        print("[StateTracker] Capturing graph snapshot...")
+        logger.info("Capturing graph snapshot...")
         self.analyzer.build_graph()
         
         metrics = self.analyzer.get_centrality_metrics()
@@ -46,11 +49,11 @@ class StateTracker:
         try:
             session.add(snapshot)
             session.commit()
-            print(f"[StateTracker] Snapshot saved: {snapshot.id} (Nodes: {nodes_count}, Communities: {len(communities)})")
+            logger.info("Snapshot saved: %s (Nodes: %d, Communities: %d)", snapshot.id, nodes_count, len(communities))
             return snapshot
         except Exception as e:
             session.rollback()
-            print(f"[StateTracker] Error saving snapshot: {e}")
+            logger.error("Error saving snapshot: %s", e)
             raise
         finally:
             session.close()
@@ -67,7 +70,7 @@ class AnomalyDetector:
         self.sensitivity = sensitivity
 
     def detect_anomalies(self, current_snapshot: GraphSnapshot) -> List[AnomalyEvent]:
-        print("[AnomalyDetector] Scanning for structural anomalies...")
+        logger.info("Scanning for structural anomalies...")
         anomalies = []
         session = self.Session()
         
@@ -78,7 +81,7 @@ class AnomalyDetector:
             ).order_by(GraphSnapshot.timestamp.desc()).all()
 
             if len(history) < 2:
-                print("[AnomalyDetector] Insufficient history for statistical analysis. Skipping.")
+                logger.info("Insufficient history for statistical analysis. Skipping.")
                 return []
 
             # --- HEURISTIC 1: Hub Emergence (Centrality Spike or New Hub) ---
@@ -139,14 +142,14 @@ class AnomalyDetector:
                 for anomaly in anomalies:
                     session.add(anomaly)
                 session.commit()
-                print(f"[AnomalyDetector] Detected {len(anomalies)} anomalies.")
+                logger.info("Detected %d anomalies.", len(anomalies))
             else:
-                print("[AnomalyDetector] No significant anomalies detected.")
+                logger.info("No significant anomalies detected.")
 
             return anomalies
 
         except Exception as e:
-            print(f"[AnomalyDetector] Error during detection: {e}")
+            logger.error("Error during detection: %s", e)
             raise
         finally:
             session.close()

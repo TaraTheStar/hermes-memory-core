@@ -1,5 +1,8 @@
+import logging
 from typing import Dict, Any
 from sqlalchemy import create_engine
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.orm import sessionmaker
 from domain.supporting.monitor_models import AnomalyEvent
 from domain.core.ports import GoalRunner
@@ -25,25 +28,25 @@ class InsightTrigger:
             ).order_by(AnomalyEvent.timestamp.desc()).limit(5).all()
 
             if not unprocessed:
-                print("[InsightTrigger] No unprocessed anomalies to handle.")
+                logger.info("No unprocessed anomalies to handle.")
                 return
             
-            print(f"[InsightTrigger] Found {len(unprocessed)} unprocessed anomalies. Generating investigation goals...")
+            logger.info("Found %d unprocessed anomalies. Generating investigation goals...", len(unprocessed))
 
             for anomaly in unprocessed:
                 goal = self._generate_goal_from_anomaly(anomaly)
                 if goal:
-                    print(f"[InsightTrigger] -> Triggering goal runner with goal: '{goal}'")
+                    logger.info("Triggering goal runner with goal: '%s'", goal)
                     await self.goal_runner.run_goal(goal, context)
                 else:
-                    print(f"[InsightTrigger] Could not generate goal for anomaly: {anomaly.anomaly_type}")
+                    logger.warning("Could not generate goal for anomaly: %s", anomaly.anomaly_type)
 
                 anomaly.processed = True
 
             session.commit()
 
         except Exception as e:
-            print(f"[InsightTrigger] Error processing anomalies: {e}")
+            logger.error("Error processing anomalies: %s", e)
         finally:
             session.close()
 

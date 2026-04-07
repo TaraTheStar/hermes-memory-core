@@ -1,5 +1,8 @@
+import logging
 from typing import List, Dict, Any
 import networkx as nx
+
+logger = logging.getLogger(__name__)
 from domain.supporting.ledger import StructuralLedger
 from domain.core.analyzer import GraphAnalyzer
 from domain.core.anomaly_detector import ContextualAnomalyDetector
@@ -28,7 +31,7 @@ class RefinementEngine:
         """
         Scans the graph for structural bloat or redundancy using context-aware thresholds.
         """
-        print(f"[RefinementEngine] Analyzing graph structure for context: {context_id}...")
+        logger.info("Analyzing graph structure for context: %s...", context_id)
         self.analyzer.build_graph()
         graph = self.analyzer.graph
         proposals = []

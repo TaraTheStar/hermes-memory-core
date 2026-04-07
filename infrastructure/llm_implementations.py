@@ -1,5 +1,8 @@
+import logging
 from infrastructure.llm_interface import BaseLLMInterface
 from domain.supporting.config_loader import ConfigLoader
+
+logger = logging.getLogger(__name__)
 from openai import OpenAI
 from domain.core.acl.llm_translator import LLMTranslator
 from domain.core.events import LLMInfrastructureError
@@ -40,7 +43,7 @@ class LocalLLMImplementation(BaseLLMInterface):
             return self.translator.transform_data(response.choices[0].message.content)
         except Exception as e:
             event = self.translator.translate_exception(e)
-            print(f"[ACL] Caught LLM Exception: {event}")
+            logger.error("Caught LLM exception: %s", event)
             raise LLMInfrastructureError(event) from e
 
 class MockLLMInterface(BaseLLMInterface):
@@ -80,13 +83,18 @@ class OpenAIImplementation(BaseLLMInterface):
     """
     def __init__(self):
         config = ConfigLoader().get_delegation_config()
-        self.translator = LLMTranslator()
-        
-        self.client = OpenAI(
-            base_url=config.get('base_url'),
-            api_key=config.get('api_key')
-        )
+        self.base_url = config.get('base_url')
+        self.api_key = config.get('api_key')
         self.model_name = config.get('model')
+        self.translator = LLMTranslator()
+
+        if not self.base_url or not self.api_key:
+            raise ValueError("Incomplete delegation config: base_url and api_key are required.")
+
+        self.client = OpenAI(
+            base_url=self.base_url,
+            api_key=self.api_key
+        )
 
     def complete(self, prompt: str, system_prompt: str = None) -> str:
         messages = []
@@ -103,7 +111,7 @@ class OpenAIImplementation(BaseLLMInterface):
             return self.translator.transform_data(response.choices[0].message.content)
         except Exception as e:
             event = self.translator.translate_exception(e)
-            print(f"[ACL] Caught LLM Exception: {event}")
+            logger.error("Caught LLM exception: %s", event)
             raise LLMInfrastructureError(event) from e
 
 class TemplateLLMInterface(BaseLLMInterface):

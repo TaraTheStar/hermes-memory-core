@@ -23,24 +23,23 @@ class ContextualAnomalyDetector:
             return self._profiles[context_id]
         return self._profiles.get(self.GLOBAL_CONTEXT, ThresholdProfile(name="default_global"))
 
-    def evaluate_metric(self, metric_type: MetricType, current_value: float, context_id: str = "global") -> Optional[DomainEvent]:
+    def evaluate_metric(self, metric_type: MetricType, current_value: float, context_id: str = "global", historical_values: Optional[List[float]] = None) -> Optional[DomainEvent]:
         """
         Evaluates a metric against the profile of the provided context.
+        Uses Z-score analysis when historical data is available, falling back
+        to simple threshold comparison otherwise.
         Returns a PatternDetectedEvent if an anomaly is detected, otherwise None.
         """
+        if historical_values and len(historical_values) >= 3:
+            return self.evaluate_complex_anomaly(metric_type, current_value, context_id, historical_values)
+
         profile = self._get_profile(context_id)
         threshold = profile.thresholds.get(metric_type)
 
         if threshold is None:
             return None
 
-        # Logic: For simplicity in this implementation, we treat thresholds as absolute upper limits.
-        # In a production version, this would involve Z-score (sigma) calculations 
-        # against a running mean/std-dev stored in the StateRegistry.
-        
-        is_anomaly = False
-        if current_value > threshold * profile.sensitivity_multiplier:
-            is_anomaly = True
+        is_anomaly = current_value > threshold * profile.sensitivity_multiplier
 
         if is_anomaly:
             return PatternDetectedEvent(
@@ -62,7 +61,7 @@ class ContextualAnomalyDetector:
         Advanced evaluation using statistical deviation (Sigma/Z-Score).
         """
         if not historical_values or len(historical_values) < 3:
-            # Fall fallback to simple threshold if not enough history
+            # Fall back to simple threshold if not enough history
             return self.evaluate_metric(metric_type, current_value, context_id)
 
         profile = self._get_profile(context_id)
