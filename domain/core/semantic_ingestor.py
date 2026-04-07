@@ -5,7 +5,7 @@ from domain.core.ports.ingestor import IntelligenceIngestor
 from domain.core.semantic_memory import SemanticMemory
 from domain.core.ports import BaseLLMInterface
 
-logger = logging.getLogger("SemanticIngestor")
+logger = logging.getLogger(__name__)
 
 class SemanticIngestor(IntelligenceIngestor):
     """

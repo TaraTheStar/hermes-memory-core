@@ -79,14 +79,3 @@ class MockLLMInterface(BaseLLMInterface):
 # Alias for backwards compatibility — identical to LocalLLMImplementation.
 OpenAIImplementation = LocalLLMImplementation
 
-class TemplateLLMInterface(BaseLLMInterface):
-    """
-    A basic implementation that can be used to wrap a real API call.
-    For now, it serves as a placeholder for real integration.
-    """
-    def __init__(self, api_key: str, provider: str = "openai"):
-        self.api_key = api_key
-        self.provider = provider
-
-    def complete(self, prompt: str, system_prompt: str = None) -> str:
-        return f"[SIMULATED {self.provider.upper()} RESPONSE]\n{prompt[:50]}..."

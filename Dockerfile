@@ -7,12 +7,14 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends build-essential && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Copy dependency spec first (layer caching: only re-installs when deps change)
 COPY pyproject.toml .
-RUN pip install --no-cache-dir -e ".[dev]"
 
-# Copy application code
+# Copy application source (needed before editable install)
 COPY . .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -e ".[dev]"
 
 # Create default data directories
 RUN mkdir -p /data/hermes_memory_engine/structural \

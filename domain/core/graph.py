@@ -1,9 +1,12 @@
 import networkx as nx
 import os
 from typing import List, Dict, Any, Optional
+from infrastructure.paths import _base_dir
 
 class RelationshipGraph:
-    def __init__(self, graph_path: str = "/data/hermes_memory_engine/structural/graph.gml"):
+    def __init__(self, graph_path: str = None):
+        if graph_path is None:
+            graph_path = os.path.join(_base_dir(), "structural", "graph.gml")
         self.graph_path = os.path.expanduser(graph_path)
         self.G = nx.Graph()
 

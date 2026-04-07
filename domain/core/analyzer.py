@@ -7,13 +7,15 @@ class GraphAnalyzer:
     def __init__(self, structural_db_path: str):
         self.ledger = StructuralLedger(structural_db_path)
         self.graph = nx.Graph()
+        self._betweenness_cache: Dict[str, float] = {}
 
     def build_graph(self):
         """
         Constructs a NetworkX graph from the Structural Ledger.
-        Nodes represent entities (Skill, Milestone, Project), 
+        Nodes represent entities (Skill, Milestone, Project),
         and edges represent RelationalEdges.
         """
+        self._betweenness_cache = {}
         with self.ledger.session_scope() as session:
             edges = session.query(RelationalEdge).all()
 
@@ -25,6 +27,12 @@ class GraphAnalyzer:
                     weight=edge.weight
                 )
 
+    def _get_betweenness(self) -> Dict[str, float]:
+        """Returns betweenness centrality, computing and caching if needed."""
+        if not self._betweenness_cache and len(self.graph.nodes) > 0:
+            self._betweenness_cache = nx.betweenness_centrality(self.graph)
+        return self._betweenness_cache
+
     def get_centrality_metrics(self) -> Dict[str, Dict[str, float]]:
         """
         Calculates various centrality metrics to find 'power nodes'.
@@ -32,13 +40,9 @@ class GraphAnalyzer:
         if len(self.graph.nodes) == 0:
             return {}
 
-        # Degree: The raw number of connections a node has.
         degree = dict(self.graph.degree())
-        
-        # Betweenness Centrality: How often a node acts as a bridge.
-        betweenness = nx.betweenness_centrality(self.graph)
-        
-        # Eigenvector Centrality: Connection to other well-connected nodes.
+        betweenness = self._get_betweenness()
+
         try:
             eigenvector = nx.eigenvector_centrality(self.graph, max_iter=1000)
         except nx.PowerIterationFailedConvergence:
@@ -59,8 +63,7 @@ class GraphAnalyzer:
         """
         if len(self.graph.nodes) < 2:
             return []
-            
-        # Using greedy modularity communities as a robust default for small graphs
+
         communities = nx.community.greedy_modularity_communities(self.graph)
         return [set(c) for c in communities]
 
@@ -68,7 +71,7 @@ class GraphAnalyzer:
         """
         Identifies nodes with high betweenness centrality.
         """
-        betweenness = nx.betweenness_centrality(self.graph)
+        betweenness = self._get_betweenness()
         sorted_nodes = sorted(betweenness.items(), key=lambda x: x[1], reverse=True)
         return [node for node, score in sorted_nodes[:top_n]]
 

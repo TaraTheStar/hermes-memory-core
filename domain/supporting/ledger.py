@@ -7,11 +7,12 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session as SASession
 from domain.core.models import Base, Event, Project, Milestone, Skill, IdentityMarker, RelationalEdge
+from infrastructure.paths import default_structural_db
 
 class StructuralLedger:
     def __init__(self, db_path: str = None):
         if db_path is None:
-            db_path = os.environ.get("HERMES_STRUCTURAL_DB", "/data/hermes_memory_engine/structural/structure.db")
+            db_path = default_structural_db()
         self.db_path = os.path.expanduser(db_path)
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
 
@@ -32,134 +33,86 @@ class StructuralLedger:
         finally:
             session.close()
 
-    def add_project(self, name: str, repository_url: Optional[str] = None, session: Optional[SASession] = None) -> str:
+    @contextmanager
+    def _use_session(self, session: Optional[SASession] = None):
+        """
+        If a session is provided, yield it and flush on success (caller owns the transaction).
+        Otherwise, create a new session and commit/rollback/close it automatically.
+        """
         owned = session is None
         if owned:
             session = self.Session()
         try:
-            existing = session.query(Project).filter_by(name=name).first()
-            if existing:
-                if repository_url is not None:
-                    existing.repository_url = repository_url
-                if owned:
-                    session.commit()
-                else:
-                    session.flush()
-                return existing.id
-            p_id = f"proj_{uuid.uuid4().hex[:8]}"
-            new_project = Project(id=p_id, name=name, repository_url=repository_url)
-            session.add(new_project)
+            yield session
             if owned:
                 session.commit()
             else:
                 session.flush()
-            return p_id
-        except Exception as e:
+        except Exception:
             if owned:
                 session.rollback()
-            raise e
+            raise
         finally:
             if owned:
                 session.close()
 
+    def add_project(self, name: str, repository_url: Optional[str] = None, session: Optional[SASession] = None) -> str:
+        with self._use_session(session) as s:
+            existing = s.query(Project).filter_by(name=name).first()
+            if existing:
+                if repository_url is not None:
+                    existing.repository_url = repository_url
+                return existing.id
+            p_id = f"proj_{uuid.uuid4().hex[:8]}"
+            s.add(Project(id=p_id, name=name, repository_url=repository_url))
+            return p_id
+
     def add_milestone(self, title: str, description: str, project_id: Optional[str] = None, importance: float = 1.0, session: Optional[SASession] = None) -> str:
-        owned = session is None
-        if owned:
-            session = self.Session()
-        try:
+        with self._use_session(session) as s:
             m_id = f"ms_{uuid.uuid4().hex[:8]}"
-            new_milestone = Milestone(
+            s.add(Milestone(
                 id=m_id,
                 title=title,
                 description=description,
                 project_id=project_id,
                 importance_score=importance,
                 timestamp=datetime.now(timezone.utc)
-            )
-            session.add(new_milestone)
-            if owned:
-                session.commit()
-            else:
-                session.flush()
+            ))
             return m_id
-        except Exception as e:
-            if owned:
-                session.rollback()
-            raise e
-        finally:
-            if owned:
-                session.close()
 
     def add_edge(self, source_id: str, target_id: str, relationship_type: str, weight: float = 1.0, session: Optional[SASession] = None) -> str:
-        owned = session is None
-        if owned:
-            session = self.Session()
-        try:
+        with self._use_session(session) as s:
             edge_id = f"edge_{uuid.uuid4().hex[:8]}"
-            new_edge = RelationalEdge(
+            s.add(RelationalEdge(
                 id=edge_id,
                 source_id=source_id,
                 target_id=target_id,
                 relationship_type=relationship_type,
                 weight=weight
-            )
-            session.add(new_edge)
-            if owned:
-                session.commit()
-            else:
-                session.flush()
+            ))
             return edge_id
-        except Exception as e:
-            if owned:
-                session.rollback()
-            raise e
-        finally:
-            if owned:
-                session.close()
 
     def add_skill(self, name: str, description: str, proficiency: float = 0.1, session: Optional[SASession] = None) -> str:
-        owned = session is None
-        if owned:
-            session = self.Session()
-        try:
-            existing = session.query(Skill).filter_by(name=name).first()
+        with self._use_session(session) as s:
+            existing = s.query(Skill).filter_by(name=name).first()
             if existing:
                 existing.description = description
                 existing.proficiency_level = max(existing.proficiency_level, proficiency)
                 existing.last_used = datetime.now(timezone.utc)
-                if owned:
-                    session.commit()
-                else:
-                    session.flush()
                 return existing.id
             s_id = f"sk_{uuid.uuid4().hex[:8]}"
-            new_skill = Skill(
+            s.add(Skill(
                 id=s_id,
                 name=name,
                 description=description,
                 proficiency_level=proficiency,
                 last_used=datetime.now(timezone.utc)
-            )
-            session.add(new_skill)
-            if owned:
-                session.commit()
-            else:
-                session.flush()
+            ))
             return s_id
-        except Exception as e:
-            if owned:
-                session.rollback()
-            raise e
-        finally:
-            if owned:
-                session.close()
 
     def set_identity_marker(self, key: str, value: str, confidence: float = 1.0, session: Optional[SASession] = None) -> str:
-        owned = session is None
-        if owned:
-            session = self.Session()
-        try:
-            marker = session.query(IdentityMarker).filter_by(key=key).first()
+        with self._use_session(session) as s:
+            marker = s.query(IdentityMarker).filter_by(key=key).first()
             if marker:
                 marker.value = value
                 marker.confidence_score = confidence
@@ -167,26 +120,12 @@ class StructuralLedger:
             else:
                 i_id = f"id_{uuid.uuid4().hex[:8]}"
                 marker = IdentityMarker(id=i_id, key=key, value=value, confidence_score=confidence)
-                session.add(marker)
-            if owned:
-                session.commit()
-            else:
-                session.flush()
+                s.add(marker)
             return marker.id
-        except Exception as e:
-            if owned:
-                session.rollback()
-            raise e
-        finally:
-            if owned:
-                session.close()
 
     def get_all_milestones(self, session: Optional[SASession] = None) -> List[Dict[str, Any]]:
-        owned = session is None
-        if owned:
-            session = self.Session()
-        try:
-            milestones = session.query(Milestone).all()
+        with self._use_session(session) as s:
+            milestones = s.query(Milestone).all()
             return [{
                 "id": m.id,
                 "title": m.title,
@@ -194,6 +133,3 @@ class StructuralLedger:
                 "timestamp": m.timestamp.isoformat(),
                 "importance": m.importance_score
             } for m in milestones]
-        finally:
-            if owned:
-                session.close()

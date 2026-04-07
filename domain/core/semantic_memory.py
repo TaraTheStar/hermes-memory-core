@@ -1,14 +1,15 @@
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 import chromadb
 from chromadb.config import Settings
+from infrastructure.paths import default_semantic_dir
 
 class SemanticMemory:
     def __init__(self, persist_directory: str = None):
         if persist_directory is None:
-            persist_directory = os.environ.get("HERMES_SEMANTIC_DIR", "/data/hermes_memory_engine/semantic/chroma_db")
+            persist_directory = default_semantic_dir()
         self.persist_directory = os.path.expanduser(persist_directory)
         os.makedirs(self.persist_directory, exist_ok=True)
         
@@ -21,7 +22,7 @@ class SemanticMemory:
         and a bounded context identifier.
         """
         event_id = f"evt_{uuid.uuid4().hex}"
-        metadata["timestamp"] = datetime.now().isoformat()
+        metadata["timestamp"] = datetime.now(timezone.utc).isoformat()
         
         if structural_id:
             metadata["structural_id"] = structural_id

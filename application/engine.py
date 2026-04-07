@@ -2,6 +2,8 @@ import os
 from typing import List, Dict, Any, Optional
 from domain.core.semantic_memory import SemanticMemory
 from domain.core.models import Event, Project, Milestone, Skill, IdentityMarker, RelationalEdge
+from infrastructure.logging_config import configure_logging
+from infrastructure.paths import default_semantic_dir, default_structural_db
 
 # Note: In a real deployment, EventExtractor would call an LLM API.
 # Here, I am designing the interface so that I (the agent) can 
@@ -68,6 +70,9 @@ class EventExtractor:
                 ))
         return events
 
+configure_logging()
+
+
 class MemoryEngine:
     """
     The main orchestrator for the Hermes Memory Engine.
@@ -76,9 +81,9 @@ class MemoryEngine:
                  semantic_dir: str = None,
                  structural_db_path: str = None):
         if semantic_dir is None:
-            semantic_dir = os.environ.get("HERMES_SEMANTIC_DIR", "/data/hermes_memory_engine/semantic/chroma_db")
+            semantic_dir = default_semantic_dir()
         if structural_db_path is None:
-            structural_db_path = os.environ.get("HERMES_STRUCTURAL_DB", "/data/hermes_memory_engine/structural/structure.db")
+            structural_db_path = default_structural_db()
         self.semantic_memory = SemanticMemory(semantic_dir)
         self.extractor = EventExtractor()
         from domain.supporting.ledger import StructuralLedger
