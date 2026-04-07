@@ -5,6 +5,7 @@ from application.orchestrator import Orchestrator
 from domain.core.agent import HermesAgent, AgentStatus
 from domain.core.ports import GoalRunner
 from domain.core.semantic_memory import SemanticMemory
+from domain.core.insight_trigger import InsightTrigger
 from domain.supporting.ledger import StructuralLedger
 
 # Setup basic logging
@@ -18,10 +19,12 @@ class AutonomousOrchestrator(Orchestrator, GoalRunner):
     """
     def __init__(self, registry: Dict[str, Type[HermesAgent]], llm_interface=None, 
                  semantic_memory: Optional[SemanticMemory] = None,
-                 structural_ledger: Optional[StructuralLedger] = None):
+                 structural_ledger: Optional[StructuralLedger] = None,
+                 insight_trigger: Optional[InsightTrigger] = None):
         super().__init__(registry, llm_interface)
         self.semantic_memory = semantic_memory
         self.structural_ledger = structural_ledger
+        self.insight_trigger = insight_trigger
         self._monitoring_task: Optional[asyncio.Task] = None
         self._is_running = False
 
@@ -52,13 +55,16 @@ class AutonomousOrchestrator(Orchestrator, GoalRunner):
             try:
                 logger.info("Scanning environment for triggers...")
                 
-                # 1. Check for new semantic intelligence
+                # 1. Check for anomalies via InsightTrigger
+                if self.insight_trigger:
+                    await self.insight_trigger.process_new_anomalies(context)
+
+                # 2. Check for new semantic intelligence
                 if self.semantic_memory:
                     # In a real system, we'd use a more sophisticated 'has_new_events' check
-                    # Here we just simulate finding an interesting recent event
+                    # For demonstration: trigger a goal if a specific keyword appears
                     recent_events = self.semantic_memory.list_events(limit=5)
                     if recent_events:
-                        # For demonstration: trigger a goal if a specific keyword appears
                         for event in recent_events:
                             if "milestone" in event['metadata'].get('type', '') or "integration" in event['text'].lower():
                                 goal = f"Investigate the recent semantic milestone: {event['text']}"
@@ -66,10 +72,9 @@ class AutonomousOrchestrator(Orchestrator, GoalRunner):
                                 await self.run_goal(goal, context)
                                 break
 
-                # 2. Check for structural changes
+                # 3. Check for structural changes
                 if self.structural_ledger:
                     # Simulate a structural anomaly check
-                    # In a real system, this would query the ledger for recent additions/deletions
                     pass
 
                 # Wait for the next interval
@@ -88,39 +93,3 @@ class AutonomousOrchestrator(Orchestrator, GoalRunner):
         result = await super().run_goal(goal, context)
         logger.info(f"✅ AUTONOMOUS GOAL COMPLETED. Confidence: {result.get('orchestration_summary', {}).get('aggregate_confidence', 0)}")
         return result
-
-if __name__ == "__main__":
-    async def test_loop():
-        import os
-        import shutil
-        from domain.core.agents_impl import ResearcherAgent, AuditorAgent
-        from domain.core.semantic_memory import SemanticMemory
-        from domain.supporting.ledger import StructuralLedger
-        from domain.core.ports import BaseLLMInterface
-        
-        class MockLLM(BaseLLMInterface):
-            def complete(self, prompt: str, system_prompt: str = None) -> str:
-                return "Simulated research findings."
-
-        test_dir = '/tmp/autonomy_test'
-        if os.path.exists(test_dir): shutil.rmtree(test_dir)
-        os.makedirs(test_dir)
-
-        sm = SemanticMemory(persist_directory=test_dir)
-        sl = StructuralLedger(test_dir)
-        
-        registry = {"researcher": ResearcherAgent, "auditor": AuditorAgent}
-        mock_llm = MockLLM()
-        orch = AutonomousOrchestrator(registry, mock_llm, semantic_memory=sm, structural_ledger=sl)
-
-        # Seed an event that should trigger the monitor
-        sm.add_event("Major integration milestone achieved!", {"type": "milestone"}, context_id="dev")
-
-        # Start monitoring with a short interval for testing
-        await orch.start_monitoring(interval_seconds=5, context={"semantic_memory": sm, "context_id": "dev"})
-        
-        print("Monitoring running... (will run for 15 seconds)")
-        await asyncio.sleep(15)
-        await orch.stop_monitoring()
-
-    asyncio.run(test_loop())

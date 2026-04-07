@@ -1,23 +1,21 @@
-import uuid
-import datetime
 from typing import List, Dict, Any, Optional, Set
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from domain.core.models import Base
 from domain.supporting.monitor_models import AnomalyEvent
-from application.orchestrator import Orchestrator
+from domain.core.ports import GoalRunner
 
 class InsightTrigger:
     """
     The bridge between detected anomalies and the Agentic Orchestrator.
     Translates mathematical events into actionable investigation goals.
     """
-    def __init__(self, structural_db_path: str, orchestrator: Orchestrator):
+    def __init__(self, structural_db_path: str, goal_runner: GoalRunner):
         self.engine = create_engine(f"sqlite:///{structural_db_path}")
         self.Session = sessionmaker(bind=self.engine)
-        self.orchestrator = orchestrator
+        self.goal_runner = goal_runner
 
-    async def process_new_anomalies(self):
+    async def process_new_anomalies(self, context: Dict[str, Any]):
         """
         Fetches unhandled anomalies and triggers orchestration for each.
         """
@@ -30,14 +28,14 @@ class InsightTrigger:
             if not unprocessed:
                 print("[InsightTrigger] No unprocessed anomalies to handle.")
                 return
-
+            
             print(f"[InsightTrigger] Found {len(unprocessed)} unprocessed anomalies. Generating investigation goals...")
 
             for anomaly in unprocessed:
                 goal = self._generate_goal_from_anomaly(anomaly)
                 if goal:
-                    print(f"[InsightTrigger] -> Triggering Orchestrator with goal: '{goal}'")
-                    await self.orchestrator.run_goal(goal)
+                    print(f"[InsightTrigger] -> Triggering goal runner with goal: '{goal}'")
+                    await self.goal_runner.run_goal(goal, context)
                 else:
                     print(f"[InsightTrigger] Could not generate goal for anomaly: {anomaly.anomaly_type}")
 
