@@ -4,7 +4,7 @@ import shutil
 import sys
 
 # Ensure the project root is in the path
-root = "/data/workspace/repos/hermes-memory-library"
+root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if root not in sys.path:
     sys.path.insert(0, root)
 
@@ -22,7 +22,7 @@ class MockLLM(BaseLLMInterface):
 async def verify_ingestion():
     print("🧪 Starting Small Ingestion Test...")
     
-    test_dir = os.path.join(root, "tests/ingestion_test_db")
+    test_dir = "/tmp/hermes_ingestion_test_db"
     if os.path.exists(test_dir):
         shutil.rmtree(test_dir)
     os.makedirs(test_dir, exist_ok=True)

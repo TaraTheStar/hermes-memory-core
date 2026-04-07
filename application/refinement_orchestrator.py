@@ -1,22 +1,9 @@
-from typing import List, Dict, Any, Optional, Set, Protocol
-from typing import List, Dict, Any, Optional, Set, Protocol
-from domain.core.ledger import StructuralLedger
+from typing import List, Dict, Any, Optional
+from domain.supporting.ledger import StructuralLedger
 from application.orchestrator import Orchestrator
 from domain.core.refinement_engine import RefinementEngine, RefinementProposal
-from domain.core.agents_impl import ResearcherAgent, AuditorAgent
-from infrastructure.llm_implementations import LocalLLMImplementation
 from domain.core.models import Skill, RelationalEdge
 from domain.core.anomaly_detector import ContextualAnomalyDetector
-from domain.core.state_registry import StateRegistry
-
-class GoalRunner(Protocol):
-    """
-    A protocol for any component capable of executing an autonomous goal.
-    This allows the InsightTrigger to trigger investigations without 
-    knowing the implementation details of the Orchestrator.
-    """
-    async def run_goal(self, goal: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        ...
 
 class RefinementOrchestrator:
     """
@@ -25,7 +12,8 @@ class RefinementOrchestrator:
     """
     def __init__(self, structural_db_path: str, registry: Dict[str, Any], llm_interface=None):
         self.ledger = StructuralLedger(structural_db_path)
-        self.engine = RefinementEngine(structural_db_path)
+        detector = ContextualAnomalyDetector()
+        self.engine = RefinementEngine(structural_db_path, detector)
         self.orchestrator = Orchestrator(registry, llm_interface)
         self.llm = llm_interface
 
@@ -97,13 +85,16 @@ class RefinementOrchestrator:
             session.close()
 
 if __name__ == "__main__":
+    import asyncio
     # Simple test runner
     async def test():
         import os
+        from domain.core.agents_impl import ResearcherAgent, AuditorAgent
+        from infrastructure.llm_implementations import LocalLLMImplementation
         db = '/tmp/hermes_refinement_test_v2.db'
         if os.path.exists(db):
             os.remove(db)
-            
+
         registry = {"researcher": ResearcherAgent, "auditor": AuditorAgent}
         llm = LocalLLMImplementation()
         orch = RefinementOrchestrator(db, registry, llm)

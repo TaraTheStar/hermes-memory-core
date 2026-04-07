@@ -1,16 +1,13 @@
 from typing import Dict, List, Any, Set
-from infrastructure.llm_interface import BaseLLMInterface
-from infrastructure.llm_implementations import LocalLLMImplementation
-from domain.supporting.config_loader import ConfigLoader
+from domain.core.ports.llm_port import BaseLLMInterface
 
 class InsightSynthesizer:
     """
     Translates raw mathematical graph metrics into human-readable, 
     narrative insights about the user's identity and growth.
     """
-    def __init__(self, llm_interface: BaseLLMInterface = None):
-        # If no interface is provided, default to the local configured backend
-        self.llm = llm_interface or LocalLLMImplementation()
+    def __init__(self, llm_interface: BaseLLMInterface):
+        self.llm = llm_interface
 
     def synthesize_report(self, metrics: Dict[str, Dict[str, float]], communities: List[Set[str]], node_metadata: Dict[str, Any]) -> str:
         """

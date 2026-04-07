@@ -49,18 +49,3 @@ class RelationshipGraph:
     def find_clusters(self) -> List[set]:
         """Finds strongly connected components (clusters of ideas)."""
         return list(nx.connected_components(self.G))
-
-if __name__ == "__main__":
-    # Quick Test
-    rg = RelationshipGraph()
-    print("Testing RelationshipGraph...")
-    
-    rg.add_node("ms_1", "milestone", {"title": "First PR"})
-    rg.add_node("sk_1", "skill", {"name": "Python"})
-    rg.add_edge("ms_1", "sk_1", "requires")
-    
-    print(f"Nodes: {rg.G.nodes(data=True)}")
-    print(f"Edges: {rg.G.edges(data=True)}")
-    
-    rg.save()
-    print("Graph saved.")

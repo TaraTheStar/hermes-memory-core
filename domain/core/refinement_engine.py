@@ -1,10 +1,9 @@
-from typing import List, Dict, Any, Set, Optional
+from typing import List, Dict, Any
 import networkx as nx
 from domain.supporting.ledger import StructuralLedger
 from domain.core.analyzer import GraphAnalyzer
 from domain.core.anomaly_detector import ContextualAnomalyDetector
 from domain.core.anomaly_config import MetricType
-from domain.core.state_registry import StateRegistry
 
 class RefinementProposal:
     def __init__(self, proposal_type: str, target_id: str, description: str, data: Dict[str, Any]):
@@ -18,14 +17,12 @@ class RefinementEngine:
     Analyst component that identifies opportunities to simplify and optimize
     the knowledge graph hierarchy using context-aware anomaly detection.
     """
-    def __init__(self, 
-                 structural_db_path: str, 
-                 detector: ContextualAnomalyDetector,
-                 state_registry: StateRegistry):
+    def __init__(self,
+                 structural_db_path: str,
+                 detector: ContextualAnomalyDetector):
         self.ledger = StructuralLedger(structural_db_path)
         self.analyzer = GraphAnalyzer(structural_db_path)
         self.detector = detector
-        self.state_registry = state_registry
 
     def analyze_for_refinement(self, context_id: str = "global") -> List[RefinementProposal]:
         """

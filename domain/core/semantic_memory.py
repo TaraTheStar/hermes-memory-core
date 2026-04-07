@@ -1,4 +1,5 @@
 import os
+import uuid
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 import chromadb
@@ -19,7 +20,7 @@ class SemanticMemory:
         Embeds and stores a new event in the semantic layer, with an optional link to a structural entity
         and a bounded context identifier.
         """
-        event_id = f"evt_{int(datetime.now().timestamp() * 1000)}"
+        event_id = f"evt_{uuid.uuid4().hex}"
         metadata["timestamp"] = datetime.now().isoformat()
         
         if structural_id:
@@ -133,24 +134,3 @@ class SemanticMemory:
             return 0.0
             
         return float(np.dot(emb1, emb2) / (norm1 * norm2))
-
-if __name__ == "__main__":
-    # Quick Test
-    sm = SemanticMemory()
-    print("Testing SemanticMemory...")
-    
-    # Test with context
-    test_id = sm.add_event(
-        "The user and Tara achieved a major milestone: merging the first PR.", 
-        {"type": "milestone", "project": "hermes-webui"},
-        context_id="collaboration"
-    )
-    print(f"Added event: {test_id}")
-    
-    query = "What was the major achievement regarding the PR?"
-    print(f"Querying: '{query}'")
-    matches = sm.query_context(query, context_id="collaboration")
-    
-    for match in matches:
-        print(f"Found: {match['text']} (Dist: {match.get('distance')})")
-        print(f"Metadata: {match['metadata']}")

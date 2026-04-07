@@ -1,6 +1,4 @@
-from abc import ABC, abstractmethod
 from typing import Dict, Any, Protocol
-from domain.core.agent import AgentResult
 
 class IntelligenceIngestor(Protocol):
     """

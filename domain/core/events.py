@@ -30,6 +30,13 @@ class InfrastructureErrorEvent(DomainEvent):
     original_exception: Optional[str] = None
     error_code: Optional[str] = None
 
+
+class LLMInfrastructureError(Exception):
+    """Raised when an LLM infrastructure call fails. Carries the domain event."""
+    def __init__(self, event: "InfrastructureErrorEvent"):
+        self.event = event
+        super().__init__(f"[{event.error_code}] {event.original_exception}")
+
 @dataclass(frozen=True)
 class PatternDetectedEvent(DomainEvent):
     """Triggered when the intelligence engine identifies a new semantic pattern."""

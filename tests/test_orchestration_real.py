@@ -11,9 +11,13 @@ from application.orchestrator import Orchestrator
 from infrastructure.llm_implementations import OpenAIImplementation
 from domain.core.agents_impl import ResearcherAgent, AuditorAgent
 
+
+@unittest.skipUnless(
+    os.environ.get("HERMES_CONFIG_PATH") or os.path.exists("/opt/data/config.yaml"),
+    "Requires LLM config"
+)
 class TestOrchestrationRealLLM(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        print("\n[Setup] Initializing Real LLM Integration...")
         self.real_llm = OpenAIImplementation()
         self.registry = {
             "researcher": ResearcherAgent,
@@ -22,40 +26,24 @@ class TestOrchestrationRealLLM(unittest.IsolatedAsyncioTestCase):
         self.orchestrator = Orchestrator(self.registry, self.real_llm)
 
     async def test_real_llm_goal_execution(self):
-        print("\n[Test] Executing goal with real LLM backend...")
-        # This goal triggers the decomposition logic in orchestrator.py
         goal = "Audit my recent skill growth"
-        
-        result = await self.orchestrator.run_goal(goal)
-        
-        print("\n--- REAL ORCHESTRATION RESULT ---")
-        print(result)
-        print("----------------------------------")
+        result = await self.orchestrator.run_goal(goal, {})
 
-        self.assertEqual(result["original_goal"], goal)
-        self.assertEqual(result["sub_task_count"], 2)
-        self.assertEqual(len(result["findings"]), 2)
-        
-        # Verify that the findings are actual strings (and not error dicts)
-        # Verify that the findings are actual strings (and not error dicts)
-        for finding in result["findings"]:
+        self.assertEqual(result["goal"], goal)
+        self.assertEqual(result["orchestration_summary"]["agents_dispatched"], 2)
+        self.assertEqual(len(result["agent_findings"]), 2)
+
+        for finding in result["agent_findings"]:
             self.assertIn("finding", finding)
             self.assertIsInstance(finding["finding"], str)
-            print(f"Finding Response Snippet: {finding['finding'][:100]}...")
 
     async def test_single_task_real_llm(self):
-        print("\n[Test] Executing single task with real LLM backend...")
         goal = "Describe the essence of pattern recognition."
-        
-        result = await self.orchestrator.run_goal(goal)
-        
-        print("\n--- REAL SINGLE TASK RESULT ---")
-        print(result)
-        print("--------------------------------")
+        result = await self.orchestrator.run_goal(goal, {})
 
-        self.assertEqual(result["sub_task_count"], 1)
-        self.assertEqual(len(result["findings"]), 1)
-        self.assertIn("finding", result["findings"][0])
+        self.assertEqual(result["orchestration_summary"]["agents_dispatched"], 1)
+        self.assertEqual(len(result["agent_findings"]), 1)
+        self.assertIn("finding", result["agent_findings"][0])
 
 if __name__ == '__main__':
     unittest.main()

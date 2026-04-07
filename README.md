@@ -53,8 +53,7 @@ delegation:
 ## Quick Start
 
 ```python
-from core.engine import MemoryEngine
-from core.models import Event
+from application.engine import MemoryEngine
 
 # Initialize (uses env vars or defaults for paths)
 engine = MemoryEngine(
@@ -81,7 +80,7 @@ for r in results:
 ### Graph Analysis
 
 ```python
-from core.analyzer import GraphAnalyzer
+from domain.core.analyzer import GraphAnalyzer
 
 analyzer = GraphAnalyzer("/tmp/hermes_structure.db")
 analyzer.build_graph()
@@ -94,7 +93,7 @@ bridges = analyzer.get_bridge_nodes(top_n=3)
 ### Monitoring & Anomaly Detection
 
 ```python
-from core.monitor import StateTracker, AnomalyDetector
+from domain.supporting.monitor import StateTracker, AnomalyDetector
 
 tracker = StateTracker("/tmp/hermes_structure.db")
 detector = AnomalyDetector("/tmp/hermes_structure.db")
@@ -106,26 +105,41 @@ anomalies = detector.detect_anomalies(snapshot)
 ## Architecture
 
 ```
-core/
-  models.py              # SQLAlchemy ORM models (Project, Milestone, Skill, etc.)
-  ledger.py              # Structural Ledger -- CRUD for relational entities
-  semantic_memory.py     # Semantic Memory -- ChromaDB vector store wrapper
-  engine.py              # MemoryEngine -- ingestion, cross-layer query bridge
-  analyzer.py            # GraphAnalyzer -- centrality, communities, bridges
-  synthesis.py           # SynthesisEngine -- automated edge creation
-  synthesizer.py         # InsightSynthesizer -- LLM narrative report generation
-  monitor.py             # StateTracker + AnomalyDetector
-  monitor_models.py      # ORM models for snapshots and anomaly events
-  insight_trigger.py     # Anomaly-to-orchestrator bridge
-  orchestrator.py        # Agent lifecycle and goal decomposition
-  agent.py               # Abstract agent base class
-  agents_impl.py         # ResearcherAgent + AuditorAgent
-  llm_interface.py       # Abstract LLM interface
-  llm_implementations.py # Local, Mock, OpenAI, and Template LLM backends
-  config_loader.py       # YAML config loading
-  refinement_engine.py   # Graph bloat and redundancy detection
+domain/
+  core/
+    models.py              # SQLAlchemy ORM models (Project, Milestone, Skill, etc.)
+    semantic_memory.py     # Semantic Memory -- ChromaDB vector store wrapper
+    analyzer.py            # GraphAnalyzer -- centrality, communities, bridges
+    graph.py               # RelationshipGraph -- NetworkX graph wrapper
+    synthesis.py           # SynthesisEngine -- automated edge creation
+    synthesizer.py         # InsightSynthesizer -- LLM narrative report generation
+    insight_trigger.py     # Anomaly-to-orchestrator bridge
+    agent.py               # Abstract agent base class
+    agents_impl.py         # ResearcherAgent + AuditorAgent
+    events.py              # Domain event definitions
+    anomaly_detector.py    # Context-aware anomaly detection
+    anomaly_config.py      # Threshold profiles and metric types
+    refinement_engine.py   # Graph bloat and redundancy detection
+    state_registry.py      # Context-aware state management
+    semantic_ingestor.py   # LLM-powered semantic ingestion
+    acl/                   # Anti-corruption layer translators
+    ports/                 # Domain ports (BaseLLMInterface, GoalRunner, IntelligenceIngestor)
+  supporting/
+    ledger.py              # Structural Ledger -- CRUD for relational entities
+    monitor.py             # StateTracker + AnomalyDetector
+    monitor_models.py      # ORM models for snapshots and anomaly events
+    config_loader.py       # YAML config loading
+
+application/
+  engine.py                # MemoryEngine -- ingestion, cross-layer query bridge
+  orchestrator.py          # Agent lifecycle and goal decomposition
+  autonomous_orchestrator.py # Autonomous orchestration with insight triggers
   refinement_orchestrator.py # Refinement proposal lifecycle
-  youtube_content.py     # YouTube transcript fetcher (standalone utility)
+
+infrastructure/
+  llm_interface.py         # Re-exports BaseLLMInterface from domain ports
+  llm_implementations.py   # Local, Mock, OpenAI, and Template LLM backends
+  youtube_content.py       # YouTube transcript fetcher (standalone utility)
 
 scripts/
   execute_first_contact.py       # End-to-end integration demo
@@ -137,6 +151,7 @@ tests/
   test_structural_bridge.py  # Cross-layer bridge tests
   test_orchestration.py      # Mock orchestration tests
   test_orchestration_real.py # Live LLM orchestration tests
+  test_ingestion_loop.py     # Recursive learning loop tests
 ```
 
 ## Running Tests

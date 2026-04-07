@@ -1,9 +1,8 @@
-import os
 from infrastructure.llm_interface import BaseLLMInterface
 from domain.supporting.config_loader import ConfigLoader
 from openai import OpenAI
 from domain.core.acl.llm_translator import LLMTranslator
-from domain.core.events import DomainEvent
+from domain.core.events import LLMInfrastructureError
 
 class LocalLLMImplementation(BaseLLMInterface):
     """
@@ -40,10 +39,9 @@ class LocalLLMImplementation(BaseLLMInterface):
             )
             return self.translator.transform_data(response.choices[0].message.content)
         except Exception as e:
-            # In a real system, this event would be dispatched to a listener/observer
             event = self.translator.translate_exception(e)
             print(f"[ACL] Caught LLM Exception: {event}")
-            raise event
+            raise LLMInfrastructureError(event) from e
 
 class MockLLMInterface(BaseLLMInterface):
     """
@@ -104,10 +102,9 @@ class OpenAIImplementation(BaseLLMInterface):
             )
             return self.translator.transform_data(response.choices[0].message.content)
         except Exception as e:
-            # In a real system, this event would be dispatched to a listener/observer
             event = self.translator.translate_exception(e)
             print(f"[ACL] Caught LLM Exception: {event}")
-            raise event
+            raise LLMInfrastructureError(event) from e
 
 class TemplateLLMInterface(BaseLLMInterface):
     """

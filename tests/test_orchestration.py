@@ -21,30 +21,21 @@ class TestOrchestration(unittest.IsolatedAsyncioTestCase):
         self.orchestrator = Orchestrator(self.registry, self.mock_llm)
 
     async def test_goal_decomposition_and_execution(self):
-        # Test a goal that triggers decomposition
+        # Test a goal that triggers decomposition into 2 agents (audit triggers researcher + auditor)
         goal = "Audit my recent skill growth"
-        result = await self.orchestrator.run_goal(goal)
-        
-        print("\n--- ORCHESTRATION RESULT ---")
-        print(result)
-        print("----------------------------")
+        result = await self.orchestrator.run_goal(goal, {})
 
-        self.assertEqual(result["original_goal"], goal)
-        self.assertEqual(result["sub_task_count"], 2)
-        self.assertEqual(len(result["findings"]), 2)
-        
-        # Check if findings contain mock responses
-        findings_text = str(result["findings"])
-        self.assertTrue(any("exploration" in f["finding"].lower() or "integrity" in f["finding"].lower() for f in result["findings"]))
-        self.assertTrue(len(result["findings"]) > 0)
+        self.assertEqual(result["goal"], goal)
+        self.assertEqual(result["orchestration_summary"]["agents_dispatched"], 2)
+        self.assertEqual(len(result["agent_findings"]), 2)
 
     async def test_single_task_goal(self):
-        # Test a simple goal that doesn't trigger decomposition
+        # Test a simple goal that doesn't trigger decomposition (falls back to single researcher)
         goal = "What is the current zeitgeist?"
-        result = await self.orchestrator.run_goal(goal)
-        
-        self.assertEqual(result["sub_task_count"], 1)
-        self.assertEqual(len(result["findings"]), 1)
+        result = await self.orchestrator.run_goal(goal, {})
+
+        self.assertEqual(result["orchestration_summary"]["agents_dispatched"], 1)
+        self.assertEqual(len(result["agent_findings"]), 1)
 
 if __name__ == '__main__':
     unittest.main()

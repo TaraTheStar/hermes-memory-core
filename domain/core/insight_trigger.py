@@ -1,7 +1,6 @@
-from typing import List, Dict, Any, Optional, Set
+from typing import Dict, Any
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from domain.core.models import Base
 from domain.supporting.monitor_models import AnomalyEvent
 from domain.core.ports import GoalRunner
 

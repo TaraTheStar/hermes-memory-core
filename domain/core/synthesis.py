@@ -1,4 +1,3 @@
-import os
 import re
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
@@ -42,13 +41,10 @@ class SynthesisEngine:
                 event_text = event['text'].lower()
                 
                 # Check against milestones
-
-                
-                # Check against milestones
                 for ms in milestones:
                     ms_time = ms.timestamp if ms.timestamp.tzinfo else ms.timestamp.replace(tzinfo=timezone.utc)
                     if abs((event_time - ms_time).total_seconds()) <= window_delta.total_seconds():
-                        if ms.title.lower() in event_text or ms.description.lower() in event_text:
+                        if ms.title.lower() in event_text or (ms.description and ms.description.lower() in event_text):
                             existing = session.query(RelationalEdge).filter_by(
                                 source_id=ms.id, 
                                 target_id=event['id'], 
@@ -86,7 +82,8 @@ class SynthesisEngine:
                                 new_edges_count += 1
         finally:
             session.close()
-            
+
+        self._last_temporal_scan = scan_start
         return new_edges_count
 
     def run_semantic_cooccurrence_scan(self, similarity_threshold: float = 0.7) -> int:

@@ -69,25 +69,3 @@ class StateRegistry:
         Returns a list of all active Bounded Contexts in the registry.
         """
         return list(self._registry.keys())
-
-if __name__ == "__main__":
-    # Quick Test
-    registry = StateRegistry()
-    print("Testing StateRegistry...")
-
-    # Test Global State
-    registry.set_state("engine_status", "running")
-    print(f"Global status: {registry.get_state('engine_status')}")
-
-    # Test Contextual State
-    registry.set_state("active_agent", "Tara", context_id="collaboration")
-    registry.set_state("active_agent", "Unknown", context_id="system")
-    
-    print(f"Collaboration agent: {registry.get_state('active_agent', context_id='collaboration')}")
-    print(f"System agent: {registry.get_state('active_agent', context_id='system')}")
-
-    # Test Context Isolation
-    print(f"All contexts: {registry.list_contexts()}")
-    
-    registry.clear_context("collaboration")
-    print(f"After clearing collaboration: {registry.get_state('active_agent', context_id='collaboration')}")

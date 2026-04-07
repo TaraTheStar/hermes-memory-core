@@ -24,11 +24,3 @@ class ThresholdProfile:
     min_sample_size: int = 5
     # Metadata for debugging
     metadata: Dict[str, Any] = field(default_factory=dict)
-
-@dataclass(frozen=True)
-class ContextualAnomalyConfig:
-    """
-    The master configuration mapping Bounded Contexts to their respective profiles.
-    """
-    context_id: str
-    profile: ThresholdProfile

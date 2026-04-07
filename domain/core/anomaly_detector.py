@@ -1,11 +1,7 @@
 from typing import Dict, Any, Optional, List
 import math
-from domain.core.anomaly_config import MetricType, ThresholdProfile, ContextualAnomalyConfig
-from domain.core.events import DomainEvent, InfrastructureErrorEvent, EventSeverity, PatternDetectedEvent
-
-class AnomalyDetectionError(Exception):
-    """Base exception for anomaly detection failures."""
-    pass
+from domain.core.anomaly_config import MetricType, ThresholdProfile
+from domain.core.events import DomainEvent, EventSeverity, PatternDetectedEvent
 
 class ContextualAnomalyDetector:
     """
