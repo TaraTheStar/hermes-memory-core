@@ -1,17 +1,22 @@
-import asyncio
-import os
-import sys
-from typing import List, Dict, Any, Set, Optional
-
-# Add parent directory to sys.path to allow absolute imports from the repo root
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from domain.supporting.ledger import StructuralLedger
+from typing import List, Dict, Any, Optional, Set, Protocol
+from typing import List, Dict, Any, Optional, Set, Protocol
+from domain.core.ledger import StructuralLedger
 from application.orchestrator import Orchestrator
 from domain.core.refinement_engine import RefinementEngine, RefinementProposal
 from domain.core.agents_impl import ResearcherAgent, AuditorAgent
 from infrastructure.llm_implementations import LocalLLMImplementation
 from domain.core.models import Skill, RelationalEdge
+from domain.core.anomaly_detector import ContextualAnomalyDetector
+from domain.core.state_registry import StateRegistry
+
+class GoalRunner(Protocol):
+    """
+    A protocol for any component capable of executing an autonomous goal.
+    This allows the InsightTrigger to trigger investigations without 
+    knowing the implementation details of the Orchestrator.
+    """
+    async def run_goal(self, goal: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        ...
 
 class RefinementOrchestrator:
     """
@@ -41,10 +46,9 @@ class RefinementOrchestrator:
             
             # 1. Audit Phase: Delegate to an Auditor to ensure we don't break the graph
             audit_goal = f"Audit the following proposed graph change for structural integrity: {proposal.description}. Data: {proposal.data}"
-            audit_result = await self.orchestrator.run_goal(audit_goal)
+            audit_result = await self.orchestrator.run_goal(audit_goal, {})
             
             # Check if the Auditor approved (Simulated logic for prototype)
-            # In a real system, we'd parse the Auditor's finding for a 'CONFIRMED' signal
             if self._is_approved(audit_result):
                 print(f"[RefinementOrchestrator] Proposal APPROVED by Auditor.")
                 # 2. Execution Phase
@@ -57,7 +61,7 @@ class RefinementOrchestrator:
 
     def _is_approved(self, audit_result: Dict[str, Any]) -> bool:
         # Prototype logic: assume success if no explicit error found in findings
-        for finding in audit_result.get('findings', []):
+        for finding in audit_result.get('agent_findings', []):
             if "REJECT" in str(finding).upper() or "DANGEROUS" in str(finding).upper():
                 return False
         return True
