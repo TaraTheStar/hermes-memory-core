@@ -1,8 +1,9 @@
 import os
-from typing import Dict, List, Any, Set
 from infrastructure.llm_interface import BaseLLMInterface
 from domain.supporting.config_loader import ConfigLoader
 from openai import OpenAI
+from domain.core.acl.llm_translator import LLMTranslator
+from domain.core.events import DomainEvent
 
 class LocalLLMImplementation(BaseLLMInterface):
     """
@@ -15,6 +16,7 @@ class LocalLLMImplementation(BaseLLMInterface):
         self.base_url = config.get('base_url')
         self.api_key = config.get('api_key')
         self.model_name = config.get('model')
+        self.translator = LLMTranslator()
 
         if not self.base_url or not self.api_key:
             raise ValueError("Incomplete delegation config: base_url and api_key are required.")
@@ -30,12 +32,18 @@ class LocalLLMImplementation(BaseLLMInterface):
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        response = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            temperature=0.7
-        )
-        return response.choices[0].message.content
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                temperature=0.7
+            )
+            return self.translator.transform_data(response.choices[0].message.content)
+        except Exception as e:
+            # In a real system, this event would be dispatched to a listener/observer
+            event = self.translator.translate_exception(e)
+            print(f"[ACL] Caught LLM Exception: {event}")
+            raise event
 
 class MockLLMInterface(BaseLLMInterface):
     """
@@ -43,7 +51,6 @@ class MockLLMInterface(BaseLLMInterface):
     It simulates "deep reasoning" by returning semi-structured, 
     sophisticated-sounding text based on the input keywords.
     """
-
     def complete(self, prompt: str, system_prompt: str = None) -> str:
         prompt_lower = prompt.lower()
         responses = []
@@ -59,10 +66,10 @@ class MockLLMInterface(BaseLLMInterface):
             
         if any(kw in prompt_lower for kw in ["audit", "integrity", "check"]):
             responses.append("An audit of the structural integrity reveals a robust and consistent architecture, with no significant logical gaps detected.")
-
+            
         if any(kw in prompt_lower for kw in ["research", "explore", "investigate"]):
             responses.append("Deep semantic exploration reveals a rich tapestry of interconnected concepts and evolving patterns of interest.")
-
+            
         if not responses:
             responses.append("The synthesis of your recent experiences reveals a pattern of rapid, structured growth and increasing complexity.")
 
@@ -75,6 +82,7 @@ class OpenAIImplementation(BaseLLMInterface):
     """
     def __init__(self):
         config = ConfigLoader().get_delegation_config()
+        self.translator = LLMTranslator()
         
         self.client = OpenAI(
             base_url=config.get('base_url'),
@@ -88,12 +96,18 @@ class OpenAIImplementation(BaseLLMInterface):
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        response = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            temperature=0.7
-        )
-        return response.choices[0].message.content
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                temperature=0.7
+            )
+            return self.translator.transform_data(response.choices[0].message.content)
+        except Exception as e:
+            # In a real system, this event would be dispatched to a listener/observer
+            event = self.translator.translate_exception(e)
+            print(f"[ACL] Caught LLM Exception: {event}")
+            raise event
 
 class TemplateLLMInterface(BaseLLMInterface):
     """
