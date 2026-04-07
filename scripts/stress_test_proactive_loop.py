@@ -5,8 +5,8 @@ import uuid
 import datetime
 import sqlite3
 
-# Add the repo to the path
-repo_path = '/data/workspace/repos/hermes-memory-library'
+# Add the repo root to the path
+repo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if repo_path not in sys.path:
     sys.path.insert(0, repo_path)
 
@@ -42,11 +42,12 @@ async def run_stress_test():
     print("\n[2/6] Establishing baseline...")
     session = ledger.Session()
     try:
-        # Create 15 baseline skills
-        for i in range(15):
-            skill = Skill(name=f"BaseSkill_{i}", description="A standard baseline skill.")
-            session.add(skill)
-        session.commit()
+        # Create 15 baseline skills (only if not already present)
+        if session.query(Skill).count() == 0:
+            for i in range(15):
+                skill = Skill(name=f"BaseSkill_{i}", description="A standard baseline skill.")
+                session.add(skill)
+            session.commit()
         
         # Create a chain of edges
         skills = session.query(Skill).all()

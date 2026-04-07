@@ -73,23 +73,3 @@ Focus on the 'why' and the 'what it means' for the user's evolution.
 """
         return prompt
 
-    def _generate_fallback_report(self, metrics: Dict[str, Dict[str, float]], communities: List[Set[str]], node_metadata: Dict[str, Any]) -> str:
-        """
-        A basic template-based fallback if no LLM is available.
-        """
-        report = ["# 🌌 State of the Soul: Knowledge Graph Insights (Fallback Mode)\n"]
-        
-        # Pillars
-        report.append("## 🏛️ The Core Pillars")
-        sorted_by_degree = sorted(metrics.items(), key=lambda x: x[1]['degree'], reverse=True)
-        for node_id, m in sorted_by_degree[:3]:
-            report.append(f"- **{node_metadata.get(node_id, node_id)}**")
-        
-        # Clusters
-        report.append("\n## 🧩 Thematic Clusters")
-        for i, community in enumerate(communities):
-            names = [str(node_metadata.get(node_id, node_id)) for node_id in community]
-            report.append(f"**Cluster {i+1}:** {', '.join(names[:5])}")
-            
-        return "\n".join(report)
-

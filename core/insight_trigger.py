@@ -23,24 +23,27 @@ class InsightTrigger:
         """
         session = self.Session()
         try:
-            # In a real production system, we would track 'processed' status.
-            # For this prototype, we will pull recent anomalies.
-            recent_anomalies = session.query(AnomalyEvent).order_by(AnomalyEvent.timestamp.desc()).limit(5).all()
-            
-            if not recent_anomalies:
-                print("[InsightTrigger] No recent anomalies to process.")
+            unprocessed = session.query(AnomalyEvent).filter(
+                AnomalyEvent.processed == False
+            ).order_by(AnomalyEvent.timestamp.desc()).limit(5).all()
+
+            if not unprocessed:
+                print("[InsightTrigger] No unprocessed anomalies to handle.")
                 return
 
-            print(f"[InsightTrigger] Found {len(recent_anomalies)} recent anomalies. Generating investigation goals...")
+            print(f"[InsightTrigger] Found {len(unprocessed)} unprocessed anomalies. Generating investigation goals...")
 
-            for anomaly in recent_anomalies:
+            for anomaly in unprocessed:
                 goal = self._generate_goal_from_anomaly(anomaly)
                 if goal:
                     print(f"[InsightTrigger] -> Triggering Orchestrator with goal: '{goal}'")
-                    # Trigger the orchestrator asynchronously
                     await self.orchestrator.run_goal(goal)
                 else:
                     print(f"[InsightTrigger] Could not generate goal for anomaly: {anomaly.anomaly_type}")
+
+                anomaly.processed = True
+
+            session.commit()
 
         except Exception as e:
             print(f"[InsightTrigger] Error processing anomalies: {e}")

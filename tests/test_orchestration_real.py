@@ -3,9 +3,9 @@ import sys
 import unittest
 import asyncio
 
-# Add the repo to the path
-repo_path = '/data/workspace/repos/hermes-memory-engine'
-sys.path.append(repo_path)
+# Add the repo root to the path
+repo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, repo_path)
 
 from core.orchestrator import Orchestrator
 from core.llm_implementations import OpenAIImplementation

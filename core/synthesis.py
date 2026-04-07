@@ -1,6 +1,6 @@
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from core.semantic_memory import SemanticMemory
 from core.ledger import StructuralLedger
@@ -26,12 +26,14 @@ class SynthesisEngine:
             events = self.semantic_memory.list_events(limit=100)
             
             for event in events:
-                event_time = datetime.fromisoformat(event['metadata']['timestamp'])
+                event_time_raw = datetime.fromisoformat(event['metadata']['timestamp'])
+                # Normalize to UTC-aware datetime for consistent comparison
+                event_time = event_time_raw if event_time_raw.tzinfo else event_time_raw.replace(tzinfo=timezone.utc)
                 event_text = event['text'].lower()
                 
                 # Check against milestones
                 for ms in milestones:
-                    ms_time = ms.timestamp
+                    ms_time = ms.timestamp if ms.timestamp.tzinfo else ms.timestamp.replace(tzinfo=timezone.utc)
                     if abs((event_time - ms_time).total_seconds()) <= window_delta.total_seconds():
                         if ms.title.lower() in event_text or ms.description.lower() in event_text:
                             existing = session.query(RelationalEdge).filter_by(
@@ -51,7 +53,8 @@ class SynthesisEngine:
                 
                 # Check against skills
                 for sk in skills:
-                    sk_time = sk.last_used if sk.last_used else datetime.now()
+                    sk_time = sk.last_used if sk.last_used else datetime.now(timezone.utc)
+                    sk_time = sk_time if sk_time.tzinfo else sk_time.replace(tzinfo=timezone.utc)
                     if abs((event_time - sk_time).total_seconds()) <= window_delta.total_seconds():
                         if sk.name.lower() in event_text:
                             existing = session.query(RelationalEdge).filter_by(

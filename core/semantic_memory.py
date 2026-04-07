@@ -5,7 +5,9 @@ import chromadb
 from chromadb.config import Settings
 
 class SemanticMemory:
-    def __init__(self, persist_directory: str = "/data/hermes_memory_engine/semantic/chroma_db"):
+    def __init__(self, persist_directory: str = None):
+        if persist_directory is None:
+            persist_directory = os.environ.get("HERMES_SEMANTIC_DIR", "/data/hermes_memory_engine/semantic/chroma_db")
         self.persist_directory = os.path.expanduser(persist_directory)
         os.makedirs(self.persist_directory, exist_ok=True)
         

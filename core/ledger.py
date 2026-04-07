@@ -5,23 +5,12 @@ from typing import List, Dict, Any, Optional
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from core.models import Base, Project, Milestone, Skill, IdentityMarker, RelationalEdge
-
-class Event:
-    def __init__(self, text: str, event_type: str, metadata: Dict[str, Any]):
-        self.text = text
-        self.event_type = event_type
-        self.metadata = metadata
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "text": self.text,
-            "type": self.event_type,
-            **self.metadata
-        }
+from core.models import Base, Event, Project, Milestone, Skill, IdentityMarker, RelationalEdge
 
 class StructuralLedger:
-    def __init__(self, db_path: str = "/data/hermes_memory_engine/structural/structure.db"):
+    def __init__(self, db_path: str = None):
+        if db_path is None:
+            db_path = os.environ.get("HERMES_STRUCTURAL_DB", "/data/hermes_memory_engine/structural/structure.db")
         self.db_path = os.path.expanduser(db_path)
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         

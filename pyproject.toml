@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "hermes-memory-core"
+version = "0.1.0"
+description = "Core logic for the Hermes Memory Engine, including the Structural Ledger and Semantic Memory layers."
+license = "AGPL-3.0-or-later"
+requires-python = ">=3.10"
+dependencies = [
+    "sqlalchemy>=2.0",
+    "chromadb>=0.4",
+    "networkx>=3.0",
+    "numpy>=1.24",
+    "pyyaml>=6.0",
+    "openai>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+]
+
+[tool.setuptools.packages.find]
+include = ["core*"]

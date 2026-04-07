@@ -3,8 +3,8 @@ import datetime
 import os
 import sys
 
-# Add the repo to the path
-repo_path = '/data/workspace/repos/hermes-memory-library'
+# Add the repo root to the path
+repo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if repo_path not in sys.path:
     sys.path.insert(0, repo_path)
 

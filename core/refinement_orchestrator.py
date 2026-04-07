@@ -4,7 +4,7 @@ import sys
 from typing import List, Dict, Any, Set, Optional
 
 # Add parent directory to sys.path to allow absolute imports from the repo root
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.ledger import StructuralLedger
 from core.orchestrator import Orchestrator

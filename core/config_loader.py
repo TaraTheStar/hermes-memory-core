@@ -2,12 +2,12 @@ import yaml
 import os
 from typing import Dict, Any, Optional
 
-DEFAULT_CONFIG_PATH = '/opt/data/config.yaml'
+DEFAULT_CONFIG_PATH = os.environ.get('HERMES_CONFIG_PATH', '/opt/data/config.yaml')
 
 class ConfigLoader:
     """
     Utility to load system-level configuration files.
-    Ensents secrets are read from the environment/config at runtime,
+    Ensures secrets are read from the environment/config at runtime,
     not hardcoded in the repository.
     """
     def __init__(self, config_path: str = DEFAULT_CONFIG_PATH):
@@ -27,7 +27,7 @@ class ConfigLoader:
 
     def get_delegation_config(self) -> Dict[str, Any]:
         """
-        Retrieget the 'delegation' block containing LLM provider details.
+        Retrieve the 'delegation' block containing LLM provider details.
         """
         delegation = self._config.get('delegation')
         if not delegation:

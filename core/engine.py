@@ -68,9 +68,13 @@ class MemoryEngine:
     """
     The main orchestrator for the Hermes Memory Engine.
     """
-    def __init__(self, 
-                 semantic_dir: str = "/data/hermes_memory_engine/semantic/chroma_db",
-                 structural_db_path: str = "/data/hermes_memory_engine/structural/structure.db"):
+    def __init__(self,
+                 semantic_dir: str = None,
+                 structural_db_path: str = None):
+        if semantic_dir is None:
+            semantic_dir = os.environ.get("HERMES_SEMANTIC_DIR", "/data/hermes_memory_engine/semantic/chroma_db")
+        if structural_db_path is None:
+            structural_db_path = os.environ.get("HERMES_STRUCTURAL_DB", "/data/hermes_memory_engine/structural/structure.db")
         self.semantic_memory = SemanticMemory(semantic_dir)
         self.extractor = EventExtractor()
         from core.ledger import StructuralLedger
@@ -102,7 +106,7 @@ class MemoryEngine:
         
         for event in discovered_events:
             # Avoid duplicate ingestion if the event is already in the instructions
-            if instructions and any(i.get('event').text == event.text for i in instructions):
+            if instructions and any(i.get('event') and i.get('event').text == event.text for i in instructions):
                 continue
                 
             self.semantic_memory.add_event(

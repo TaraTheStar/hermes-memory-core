@@ -2,8 +2,9 @@ import json
 import os
 from datetime import datetime
 from typing import List, Dict, Any
-from semantic_memory import SemanticMemory
-from ledger import StructuralLedger, Event
+from core.semantic_memory import SemanticMemory
+from core.ledger import StructuralLedger
+from core.models import Event
 
 class EpisodicMigrator:
     def __init__(self, 
@@ -12,8 +13,8 @@ class EpisodicMigrator:
         self.sessions_dir = sessions_dir
         # We'll import the engine components dynamically to avoid path issues
         import sys
-        sys.path.append("/data/hermes_memory_engine/core")
-        from engine import MemoryEngine
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from core.engine import MemoryEngine
         self.engine = MemoryEngine()
 
     def run_migration(self):
@@ -88,13 +89,13 @@ class EpisodicMigrator:
             self.engine.ingest_interaction(
                 user_text="Batch Migration from Session Logs",
                 assistant_text=f"Reflecting on session: {title}",
-                manual_events=discovered_events
+                instructions=[{"event": e} for e in discovered_events]
             )
 
 if __name__ == "__main__":
     # Set PYTHONPATH so we can import the local core modules
     import sys
-    sys.path.append("/data/hermes_memory_engine/core")
-    
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
     migrator = EpisodicMigrator()
     migrator.run_migration()

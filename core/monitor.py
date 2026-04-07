@@ -61,6 +61,8 @@ class AnomalyDetector:
     """
     def __init__(self, structural_db_path: str, sensitivity: float = 2.0):
         self.engine = create_engine(f"sqlite:///{structural_db_path}")
+        from core.monitor_models import MonitoringBase
+        MonitoringBase.metadata.create_all(self.engine)
         self.Session = sessionmaker(bind=self.engine, expire_on_commit=False)
         self.sensitivity = sensitivity
 

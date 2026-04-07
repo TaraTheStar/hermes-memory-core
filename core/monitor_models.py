@@ -1,6 +1,6 @@
 import datetime
 from typing import Dict, List, Any, Optional
-from sqlalchemy import Column, String, Float, DateTime, JSON, Integer, create_engine
+from sqlalchemy import Column, String, Float, DateTime, JSON, Integer, Boolean, create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 # New Base for Monitoring models
@@ -40,3 +40,6 @@ class AnomalyEvent(MonitoringBase):
     
     # The raw data that triggered the anomaly for debugging/audit
     trigger_data = Column(JSON)
+
+    # Whether this anomaly has been processed by InsightTrigger
+    processed = Column(Boolean, default=False)

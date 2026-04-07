@@ -1,3 +1,4 @@
+import datetime
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List
 from core.llm_interface import BaseLLMInterface
@@ -36,7 +37,7 @@ class HermesAgent(ABC):
 
     def _log(self, message: str, level: str = "INFO"):
         self.history.append({
-            "timestamp": os.popen('date').read().strip(),
+            "timestamp": datetime.datetime.now().isoformat(),
             "level": level,
             "message": message
         })

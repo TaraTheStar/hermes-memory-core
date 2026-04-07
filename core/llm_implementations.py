@@ -6,8 +6,8 @@ from openai import OpenAI
 
 class LocalLLMImplementation(BaseLLMInterface):
     """
-    An implementation of the LLM interface that connects to a local 
-    OpenAI-compatible server (like Latchkey/vLLM/Ollama) using 
+    An implementation of the LLM interface that connects to a local
+    OpenAI-compatible server (like Latchkey/vLLM/Ollama) using
     the system's central configuration.
     """
     def __init__(self):
@@ -19,14 +19,23 @@ class LocalLLMImplementation(BaseLLMInterface):
         if not self.base_url or not self.api_key:
             raise ValueError("Incomplete delegation config: base_url and api_key are required.")
 
+        self.client = OpenAI(
+            base_url=self.base_url,
+            api_key=self.api_key
+        )
+
     def complete(self, prompt: str, system_prompt: str = None) -> str:
-        """
-        Simulates the HTTP call to the local server for testing 
-        without requiring the 'openai' library dependency if needed.
-        """
-        import time
-        time.sleep(0.5) 
-        return f"[LOCAL BACKEND ({self.model_name}) RESPONSE]\n{prompt[:100]}... (Simulated)"
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            temperature=0.7
+        )
+        return response.choices[0].message.content
 
 class MockLLMInterface(BaseLLMInterface):
     """
