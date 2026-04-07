@@ -27,16 +27,16 @@ async def run_stress_test():
     # 1. Setup
     print("\n[1/6] Initializing components...")
     ledger = StructuralLedger(DB_PATH)
-    analyzer = GraphAnalyzer(DB_PATH)
-    tracker = StateTracker(DB_PATH)
-    detector = AnomalyDetector(DB_PATH)
-    
+    analyzer = GraphAnalyzer(ledger)
+    tracker = StateTracker(ledger)
+    detector = AnomalyDetector(ledger)
+
     llm = OpenAIImplementation()
     registry = {"researcher": ResearcherAgent, "auditor": AuditorAgent}
     orchestrator = Orchestrator(registry, llm)
-    
+
     from domain.core.insight_trigger import InsightTrigger
-    trigger = InsightTrigger(DB_PATH, orchestrator)
+    trigger = InsightTrigger(ledger, orchestrator)
 
     # 2. Baseline
     print("\n[2/6] Establishing baseline...")

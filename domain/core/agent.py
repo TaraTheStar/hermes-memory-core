@@ -1,5 +1,6 @@
 import datetime
 from abc import ABC, abstractmethod
+from datetime import timezone
 from typing import Dict, Any, Optional, List, Protocol
 from domain.core.ports import BaseLLMInterface
 
@@ -17,7 +18,7 @@ class AgentTask:
     def __init__(self, goal: str, constraints: Optional[List[str]] = None):
         self.goal = goal
         self.constraints = constraints or []
-        self.created_at = datetime.datetime.now()
+        self.created_at = datetime.datetime.now(timezone.utc)
 
 class AgentResult:
     """Represents the outcome of an agent's execution."""
@@ -26,7 +27,7 @@ class AgentResult:
         self.confidence = confidence
         self.evidence = evidence
         self.status = status
-        self.completed_at = datetime.datetime.now()
+        self.completed_at = datetime.datetime.now(timezone.utc)
 
 class HermesAgent(ABC):
     """
@@ -47,7 +48,7 @@ class HermesAgent(ABC):
 
         State transitions:
             IDLE -> THINKING -> ACTING -> REFLECTING -> REPORTING -> COMPLETED
-                    \____________any stage____________/ -> FAILED (on exception)
+                    \\____________any stage____________/ -> FAILED (on exception)
 
         Stages:
             THINKING:    _plan() decomposes the goal into sub-tasks.
@@ -108,15 +109,8 @@ class HermesAgent(ABC):
 
     def _log(self, message: str, level: str = "INFO"):
         self.history.append({
-            "timestamp": datetime.datetime.now().isoformat(),
+            "timestamp": datetime.datetime.now(timezone.utc).isoformat(),
             "level": level,
             "message": message,
             "status": self.status
         })
-
-    def _build_system_prompt(self) -> str:
-        return (
-            f"You are a specialized {self.role} agent within the Hermes Memory Engine. "
-            "Your goal is to execute specific tasks with high precision, following a cycle of "
-            "planning, execution, and reflection. Always return structured, evidence-backed findings."
-        )

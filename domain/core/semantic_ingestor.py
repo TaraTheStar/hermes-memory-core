@@ -50,12 +50,10 @@ class SemanticIngestor(IntelligenceIngestor):
 
             logger.info(f"[SemanticIngestor] Synthesizing intelligence for goal: {goal}")
             
-            # FIX: Ensure we await the completion if it's a coroutine, but handle if it's just a string
-            result = self.llm.complete(prompt, system_prompt="You are a master of linguistic compression and semantic density.")
-            if asyncio.iscoroutine(result):
-                synthesized_text = await result
-            else:
-                synthesized_text = result
+            synthesized_text = await asyncio.to_thread(
+                self.llm.complete, prompt,
+                "You are a master of linguistic compression and semantic density."
+            )
 
             if not synthesized_text or len(synthesized_text) < 10:
                 logger.warning("[SemanticIngestor] Synthesis failed or produced insufficient text.")

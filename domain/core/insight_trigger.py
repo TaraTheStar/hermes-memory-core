@@ -12,8 +12,11 @@ class InsightTrigger:
     The bridge between detected anomalies and the Agentic Orchestrator.
     Translates mathematical events into actionable investigation goals.
     """
-    def __init__(self, structural_db_path: str, goal_runner: GoalRunner):
-        self.ledger = StructuralLedger(structural_db_path)
+    def __init__(self, structural_db_path_or_ledger, goal_runner: GoalRunner):
+        if isinstance(structural_db_path_or_ledger, StructuralLedger):
+            self.ledger = structural_db_path_or_ledger
+        else:
+            self.ledger = StructuralLedger(structural_db_path_or_ledger)
         self.goal_runner = goal_runner
 
     async def process_new_anomalies(self, context: Optional[Dict[str, Any]] = None):

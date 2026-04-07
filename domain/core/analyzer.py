@@ -4,8 +4,11 @@ from domain.supporting.ledger import StructuralLedger
 from domain.core.models import RelationalEdge, Skill, Milestone, Project
 
 class GraphAnalyzer:
-    def __init__(self, structural_db_path: str):
-        self.ledger = StructuralLedger(structural_db_path)
+    def __init__(self, structural_db_path_or_ledger):
+        if isinstance(structural_db_path_or_ledger, StructuralLedger):
+            self.ledger = structural_db_path_or_ledger
+        else:
+            self.ledger = StructuralLedger(structural_db_path_or_ledger)
         self.graph = nx.Graph()
         self._betweenness_cache: Dict[str, float] = {}
 
@@ -16,6 +19,7 @@ class GraphAnalyzer:
         and edges represent RelationalEdges.
         """
         self._betweenness_cache = {}
+        self.graph.clear()
         with self.ledger.session_scope() as session:
             edges = session.query(RelationalEdge).all()
 

@@ -14,9 +14,12 @@ class StateTracker:
     """
     Responsible for periodic snapshotting of the graph's structural state.
     """
-    def __init__(self, structural_db_path: str):
-        self.ledger = StructuralLedger(structural_db_path)
-        self.analyzer = GraphAnalyzer(structural_db_path)
+    def __init__(self, structural_db_path_or_ledger):
+        if isinstance(structural_db_path_or_ledger, StructuralLedger):
+            self.ledger = structural_db_path_or_ledger
+        else:
+            self.ledger = StructuralLedger(structural_db_path_or_ledger)
+        self.analyzer = GraphAnalyzer(self.ledger)
 
     def capture_snapshot(self) -> GraphSnapshot:
         logger.info("Capturing graph snapshot...")
@@ -54,8 +57,11 @@ class AnomalyDetector:
     """
     Compares the current snapshot against historical data to find significant patterns.
     """
-    def __init__(self, structural_db_path: str, sensitivity: float = 2.0):
-        self.ledger = StructuralLedger(structural_db_path)
+    def __init__(self, structural_db_path_or_ledger, sensitivity: float = 2.0):
+        if isinstance(structural_db_path_or_ledger, StructuralLedger):
+            self.ledger = structural_db_path_or_ledger
+        else:
+            self.ledger = StructuralLedger(structural_db_path_or_ledger)
         self.sensitivity = sensitivity
 
     def detect_anomalies(self, current_snapshot: GraphSnapshot) -> List[AnomalyEvent]:

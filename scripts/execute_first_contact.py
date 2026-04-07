@@ -29,15 +29,15 @@ async def execute_first_contact():
     # 1. Setup Components
     print("[1/5] Initializing Intelligence Stack...")
     ledger = StructuralLedger(DB_PATH)
-    analyzer = GraphAnalyzer(DB_PATH)
-    tracker = StateTracker(DB_PATH)
-    detector = AnomalyDetector(DB_PATH)
-    
+    analyzer = GraphAnalyzer(ledger)
+    tracker = StateTracker(ledger)
+    detector = AnomalyDetector(ledger)
+
     llm = LocalLLMImplementation()
     registry = {"researcher": ResearcherAgent, "auditor": AuditorAgent}
     orchestrator = Orchestrator(registry, llm)
     synthesizer = InsightSynthesizer(llm)
-    trigger = InsightTrigger(DB_PATH, orchestrator)
+    trigger = InsightTrigger(ledger, orchestrator)
 
     # 2. Ensure a Knowledge Base exists (Baseline)
     print("[2/5] Establishing Knowledge Baseline...")

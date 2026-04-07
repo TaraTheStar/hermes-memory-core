@@ -4,11 +4,12 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 import chromadb
 from chromadb.config import Settings
-from infrastructure.paths import default_semantic_dir
+
 
 class SemanticMemory:
     def __init__(self, persist_directory: str = None):
         if persist_directory is None:
+            from infrastructure.paths import default_semantic_dir
             persist_directory = default_semantic_dir()
         self.persist_directory = os.path.expanduser(persist_directory)
         os.makedirs(self.persist_directory, exist_ok=True)
@@ -115,24 +116,19 @@ class SemanticMemory:
     def get_similarity(self, id1: str, id2: str) -> float:
         """
         Calculates the similarity between two events using their embeddings.
-        Note: ChromaDB distance is L2 by default, so similarity = 1 / (1 + distance).
+        Uses L2 distance converted to similarity via 1 / (1 + distance),
+        consistent with the metric used in query().
         """
-        # Get embeddings for both IDs
+        import numpy as np
+
         res1 = self.collection.get(ids=[id1], include=['embeddings'])
         res2 = self.collection.get(ids=[id2], include=['embeddings'])
-        
-        if len(res1['embeddings']) == 0 or len(res2['embeddings']) == 0:
+
+        if not res1['embeddings'] or not res2['embeddings']:
             return 0.0
-            
-        import numpy as np
+
         emb1 = np.array(res1['embeddings'][0])
         emb2 = np.array(res2['embeddings'][0])
-        
-        # Cosine similarity
-        norm1 = np.linalg.norm(emb1)
-        norm2 = np.linalg.norm(emb2)
-        
-        if norm1 == 0 or norm2 == 0:
-            return 0.0
-            
-        return float(np.dot(emb1, emb2) / (norm1 * norm2))
+
+        distance = float(np.linalg.norm(emb1 - emb2))
+        return 1.0 / (1.0 + distance)

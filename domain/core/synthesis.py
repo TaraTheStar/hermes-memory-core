@@ -11,10 +11,13 @@ logger = logging.getLogger(__name__)
 DEFAULT_SYMMETRY_KEYWORDS: Set[str] = {'python', 'javascript', 'rust', 'coding'}
 
 class SynthesisEngine:
-    def __init__(self, semantic_dir: str, structural_db_path: str,
+    def __init__(self, semantic_dir: str, structural_db_path_or_ledger,
                  symmetry_keywords: Optional[Set[str]] = None):
         self.semantic_memory = SemanticMemory(semantic_dir)
-        self.ledger = StructuralLedger(structural_db_path)
+        if isinstance(structural_db_path_or_ledger, StructuralLedger):
+            self.ledger = structural_db_path_or_ledger
+        else:
+            self.ledger = StructuralLedger(structural_db_path_or_ledger)
         self.symmetry_keywords = symmetry_keywords if symmetry_keywords is not None else DEFAULT_SYMMETRY_KEYWORDS
         # High-water marks for incremental scanning (per scan type)
         self._last_temporal_scan: Optional[datetime] = None
@@ -28,13 +31,21 @@ class SynthesisEngine:
         """
         new_edges_count = 0
         window_delta = timedelta(minutes=window_minutes)
-        
+
         scan_start = datetime.now(timezone.utc)
- 
+
         with self.ledger.session_scope() as session:
             milestones = session.query(Milestone).all()
             skills = session.query(Skill).all()
             events = self.semantic_memory.list_events(limit=100)
+
+            # Pre-load existing temporal_context edges into a set for O(1) lookup
+            existing_edges = {
+                (e.source_id, e.target_id)
+                for e in session.query(
+                    RelationalEdge.source_id, RelationalEdge.target_id
+                ).filter_by(relationship_type="temporal_context").all()
+            }
 
             for event in events:
                 try:
@@ -58,13 +69,8 @@ class SynthesisEngine:
                     ms_time = ms.timestamp if ms.timestamp.tzinfo else ms.timestamp.replace(tzinfo=timezone.utc)
                     if abs((event_time - ms_time).total_seconds()) <= window_delta.total_seconds():
                         if ms.title.lower() in event_text or (ms.description and ms.description.lower() in event_text):
-                            existing = session.query(RelationalEdge).filter_by(
-                                source_id=ms.id,
-                                target_id=event['id'],
-                                relationship_type="temporal_context"
-                            ).first()
-
-                            if not existing:
+                            edge_key = (ms.id, event['id'])
+                            if edge_key not in existing_edges:
                                 self.ledger.add_edge(
                                     source_id=ms.id,
                                     target_id=event['id'],
@@ -72,6 +78,7 @@ class SynthesisEngine:
                                     weight=0.5,
                                     session=session
                                 )
+                                existing_edges.add(edge_key)
                                 new_edges_count += 1
 
                 # Check against skills
@@ -80,13 +87,8 @@ class SynthesisEngine:
                     sk_time = sk_time if sk_time.tzinfo else sk_time.replace(tzinfo=timezone.utc)
                     if abs((event_time - sk_time).total_seconds()) <= window_delta.total_seconds():
                         if sk.name.lower() in event_text:
-                            existing = session.query(RelationalEdge).filter_by(
-                                source_id=sk.id,
-                                target_id=event['id'],
-                                relationship_type="temporal_context"
-                            ).first()
-
-                            if not existing:
+                            edge_key = (sk.id, event['id'])
+                            if edge_key not in existing_edges:
                                 self.ledger.add_edge(
                                     source_id=sk.id,
                                     target_id=event['id'],
@@ -94,6 +96,7 @@ class SynthesisEngine:
                                     weight=0.5,
                                     session=session
                                 )
+                                existing_edges.add(edge_key)
                                 new_edges_count += 1
 
         self._last_temporal_scan = scan_start
@@ -113,6 +116,14 @@ class SynthesisEngine:
             return 0
 
         with self.ledger.session_scope() as session:
+            # Pre-load existing semantic_similarity edges for O(1) lookup
+            existing_edges = {
+                (e.source_id, e.target_id)
+                for e in session.query(
+                    RelationalEdge.source_id, RelationalEdge.target_id
+                ).filter_by(relationship_type="semantic_similarity").all()
+            }
+
             for i in range(len(events)):
                 for j in range(i + 1, len(events)):
                     # Skip pairs where both events were already scanned
@@ -139,13 +150,8 @@ class SynthesisEngine:
                         continue
 
                     if similarity >= similarity_threshold:
-                        existing = session.query(RelationalEdge).filter_by(
-                            source_id=e1['id'],
-                            target_id=e2['id'],
-                            relationship_type="semantic_similarity"
-                        ).first()
-
-                        if not existing:
+                        edge_key = (e1['id'], e2['id'])
+                        if edge_key not in existing_edges:
                             self.ledger.add_edge(
                                 source_id=e1['id'],
                                 target_id=e2['id'],
@@ -153,6 +159,7 @@ class SynthesisEngine:
                                 weight=similarity,
                                 session=session
                             )
+                            existing_edges.add(edge_key)
                             new_edges_count += 1
 
         self._last_cooccurrence_scan = scan_start
@@ -165,6 +172,15 @@ class SynthesisEngine:
         new_edges_count = 0
         with self.ledger.session_scope() as session:
             skills = session.query(Skill).all()
+
+            # Pre-load existing attribute_symmetry edges for O(1) lookup
+            existing_edges = {
+                (e.source_id, e.target_id)
+                for e in session.query(
+                    RelationalEdge.source_id, RelationalEdge.target_id
+                ).filter_by(relationship_type="attribute_symmetry").all()
+            }
+
             for i in range(len(skills)):
                 for j in range(i + 1, len(skills)):
                     s1, s2 = skills[i], skills[j]
@@ -176,13 +192,8 @@ class SynthesisEngine:
                     if common_words.intersection(self.symmetry_keywords) or \
                        name1 in name2 or name2 in name1 or \
                        (len(name1) >= 4 and len(name2) >= 4 and name1[:4] == name2[:4]):
-                        existing = session.query(RelationalEdge).filter_by(
-                            source_id=s1.id,
-                            target_id=s2.id,
-                            relationship_type="attribute_symmetry"
-                        ).first()
-
-                        if not existing:
+                        edge_key = (s1.id, s2.id)
+                        if edge_key not in existing_edges:
                             self.ledger.add_edge(
                                 source_id=s1.id,
                                 target_id=s2.id,
@@ -190,6 +201,7 @@ class SynthesisEngine:
                                 weight=0.8,
                                 session=session
                             )
+                            existing_edges.add(edge_key)
                             new_edges_count += 1
-            
+
         return new_edges_count

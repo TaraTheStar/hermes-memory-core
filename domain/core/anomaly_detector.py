@@ -65,7 +65,8 @@ class ContextualAnomalyDetector:
         to simple threshold comparison otherwise.
         Returns a PatternDetectedEvent if an anomaly is detected, otherwise None.
         """
-        if historical_values and len(historical_values) >= 3:
+        profile = self._get_profile(context_id)
+        if historical_values and len(historical_values) >= profile.min_sample_size:
             return self.evaluate_complex_anomaly(metric_type, current_value, context_id, historical_values)
 
         return self._evaluate_simple_threshold(metric_type, current_value, context_id)
@@ -74,15 +75,14 @@ class ContextualAnomalyDetector:
         """
         Advanced evaluation using statistical deviation (Sigma/Z-Score).
         """
-        if not historical_values or len(historical_values) < 3:
+        profile = self._get_profile(context_id)
+        if not historical_values or len(historical_values) < profile.min_sample_size:
             return self._evaluate_simple_threshold(metric_type, current_value, context_id)
 
-        profile = self._get_profile(context_id)
-        
-        # Calculate mean and standard deviation
+        # Calculate mean and sample standard deviation (n-1 for unbiased estimate)
         n = len(historical_values)
         mean = sum(historical_values) / n
-        variance = sum((x - mean) ** 2 for x in historical_values) / n
+        variance = sum((x - mean) ** 2 for x in historical_values) / (n - 1)
         std_dev = math.sqrt(variance)
 
         if std_dev == 0:

@@ -17,7 +17,7 @@ class RefinementOrchestrator:
     def __init__(self, structural_db_path: str, registry: Dict[str, Any], llm_interface=None):
         self.ledger = StructuralLedger(structural_db_path)
         detector = ContextualAnomalyDetector()
-        self.engine = RefinementEngine(structural_db_path, detector)
+        self.engine = RefinementEngine(self.ledger, detector)
         self.orchestrator = Orchestrator(registry, llm_interface)
         self.llm = llm_interface
 

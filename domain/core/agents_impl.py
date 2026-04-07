@@ -40,7 +40,7 @@ class ResearcherAgent(HermesAgent):
                 if results:
                     best_evidence = [r["text"] for r in results]
                     summary = f"Found relevant information: {results[0]['text']}"
-                    confidence = 0.9 if len(results) > 0 else 0.1
+                    confidence = 0.9
                 break
             elif finding["type"] == "error":
                 summary = finding["message"]

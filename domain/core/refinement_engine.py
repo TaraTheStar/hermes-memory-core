@@ -21,10 +21,13 @@ class RefinementEngine:
     the knowledge graph hierarchy using context-aware anomaly detection.
     """
     def __init__(self,
-                 structural_db_path: str,
+                 structural_db_path_or_ledger,
                  detector: ContextualAnomalyDetector):
-        self.ledger = StructuralLedger(structural_db_path)
-        self.analyzer = GraphAnalyzer(structural_db_path)
+        if isinstance(structural_db_path_or_ledger, StructuralLedger):
+            self.ledger = structural_db_path_or_ledger
+        else:
+            self.ledger = StructuralLedger(structural_db_path_or_ledger)
+        self.analyzer = GraphAnalyzer(self.ledger)
         self.detector = detector
 
     def analyze_for_refinement(self, context_id: str = "global") -> List[RefinementProposal]:
@@ -102,7 +105,6 @@ class RefinementEngine:
 
     def _persist_anomaly_events(self, events) -> None:
         """Write PatternDetectedEvents as AnomalyEvent rows."""
-        from domain.core.anomaly_detector import ContextualAnomalyDetector
         with self.ledger.session_scope() as session:
             for event in events:
                 session.add(ContextualAnomalyDetector.to_anomaly_event(event))

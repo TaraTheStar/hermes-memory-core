@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, JSON
+from sqlalchemy import Column, Index, Integer, String, DateTime, ForeignKey, Float, JSON
 from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime, timezone
 import uuid
@@ -65,6 +65,11 @@ class IdentityMarker(Base):
 
 class RelationalEdge(Base):
     __tablename__ = 'relational_edges'
+    __table_args__ = (
+        Index('ix_edge_source_id', 'source_id'),
+        Index('ix_edge_target_id', 'target_id'),
+        Index('ix_edge_source_target_type', 'source_id', 'target_id', 'relationship_type'),
+    )
 
     id = Column(String, primary_key=True, default=generate_uuid)
     source_id = Column(String, nullable=False)

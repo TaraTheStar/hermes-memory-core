@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Optional
 
 class BaseLLMInterface(ABC):
     """
@@ -8,7 +9,7 @@ class BaseLLMInterface(ABC):
     """
 
     @abstractmethod
-    def complete(self, prompt: str, system_prompt: str = None) -> str:
+    def complete(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         """
         Sends a prompt to the LLM and returns the generated text.
 

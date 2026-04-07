@@ -15,6 +15,7 @@ class Orchestrator:
         self.registry = registry  # Maps role names to Agent classes
         self.llm = llm_interface
         self.active_agents: List[HermesAgent] = []
+        self._max_agent_history = 100
         self.ingestor = ingestor
 
     async def decompose_task(self, goal: str) -> List[Dict[str, Any]]:
@@ -27,11 +28,11 @@ class Orchestrator:
         logger.info("Decomposing goal: '%s'", goal)
 
         if self.llm:
-            return self._llm_decompose(goal)
+            return await self._llm_decompose(goal)
 
         return self._heuristic_decompose(goal)
 
-    def _llm_decompose(self, goal: str) -> List[Dict[str, Any]]:
+    async def _llm_decompose(self, goal: str) -> List[Dict[str, Any]]:
         """Uses the LLM to decompose a goal into role-tagged sub-tasks."""
         available_roles = list(self.registry.keys())
         prompt = (
@@ -44,7 +45,7 @@ class Orchestrator:
         )
         try:
             import json
-            raw = self.llm.complete(prompt)
+            raw = await asyncio.to_thread(self.llm.complete, prompt)
             # Extract JSON array from response (handle markdown fences)
             raw = raw.strip()
             if raw.startswith("```"):
@@ -120,7 +121,11 @@ class Orchestrator:
 
         # Execute all agents concurrently
         raw_results = await asyncio.gather(*agent_tasks)
-        
+
+        # Evict completed agents to prevent unbounded growth
+        if len(self.active_agents) > self._max_agent_history:
+            self.active_agents = self.active_agents[-self._max_agent_history:]
+
         # Synthesize findings
         final_report = self._synthesize(goal, raw_results)
         
