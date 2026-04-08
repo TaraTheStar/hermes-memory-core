@@ -97,10 +97,17 @@ class SemanticMemory:
         """
         Lists the most recent events, optionally scoped to a bounded context.
         Results are sorted by timestamp descending (most recent first).
+
+        ChromaDB's ``get()`` does not guarantee ordering, so we fetch the
+        entire collection and sort in Python.  For very large collections a
+        timestamp-indexed external store would be more efficient, but this is
+        correct for the current scale.
         """
-        # Fetch a wider set to account for filtering reducing the count.
-        fetch_limit = limit * 5
-        results = self.collection.get(limit=fetch_limit)
+        total = self.collection.count()
+        if total == 0:
+            return []
+
+        results = self.collection.get(limit=total)
         formatted_results = []
         for i in range(len(results['ids'])):
             metadata = results['metadatas'][i]

@@ -18,7 +18,6 @@ class Orchestrator:
         self.registry = registry  # Maps role names to Agent classes
         self.llm = llm_interface
         self.active_agents: List[HermesAgent] = []
-        self._max_agent_history = 100
         self._max_concurrent_agents = 10
         self.ingestor = ingestor
         self.refinement_registry = refinement_registry or RefinementRegistry()
@@ -139,10 +138,14 @@ class Orchestrator:
 
         # Execute all agents concurrently (bounded by semaphore)
         raw_results = await asyncio.gather(*agent_tasks)
-        
-        # Evict completed agents to prevent unbounded growth
-        if len(self.active_agents) > self._max_agent_history:
-            self.active_agents = self.active_agents[-self._max_agent_history:]
+
+        # Remove completed/failed agents to prevent memory leaks in long-running
+        # processes.  Only agents still mid-execution are retained.
+        active_statuses = {AgentStatus.THINKING, AgentStatus.ACTING,
+                           AgentStatus.REFLECTING, AgentStatus.REPORTING}
+        self.active_agents = [
+            a for a in self.active_agents if a.status in active_statuses
+        ]
 
         # Synthesize findings
         final_report = self._synthesize(goal, raw_results)

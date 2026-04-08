@@ -31,6 +31,21 @@ class ResearcherAgent(HermesAgent):
         
         return findings
 
+    @staticmethod
+    def _distance_to_confidence(distance: Optional[float]) -> float:
+        """Convert ChromaDB L2 distance to a 0.0–1.0 confidence score.
+
+        Uses the same ``1 / (1 + d)`` similarity formula as SemanticMemory,
+        then scales it into the 0.1–0.95 confidence range so that very close
+        matches yield high confidence and distant matches yield low confidence.
+        A missing distance (``None``) returns a moderate default.
+        """
+        if distance is None:
+            return 0.5
+        similarity = 1.0 / (1.0 + distance)
+        # Map similarity (roughly 0–1) into the 0.1–0.95 confidence range
+        return max(0.1, min(0.95, similarity))
+
     async def _reflect(self, findings: List[Dict[str, Any]], task: AgentTask, context: Dict[str, Any]) -> AgentResult:
         all_evidence = []
         best_summary = None
@@ -42,9 +57,12 @@ class ResearcherAgent(HermesAgent):
                 results = finding["results"]
                 if results:
                     all_evidence.extend(r["text"] for r in results)
-                    if best_confidence < 0.9:
+                    # Derive confidence from the best (closest) result's distance
+                    top_distance = results[0].get("distance")
+                    match_confidence = self._distance_to_confidence(top_distance)
+                    if match_confidence > best_confidence:
                         best_summary = f"Found relevant information: {results[0]['text']}"
-                        best_confidence = max(best_confidence, 0.9)
+                        best_confidence = match_confidence
             elif finding["type"] == "error":
                 errors.append(finding["message"])
 
