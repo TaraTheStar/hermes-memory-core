@@ -13,6 +13,7 @@ _SEVERITY_MAP = {
 }
 
 
+
 class ContextualAnomalyDetector:
     """
     The intelligence layer responsible for determining if a change in 
@@ -73,38 +74,66 @@ class ContextualAnomalyDetector:
 
     def evaluate_complex_anomaly(self, metric_type: MetricType, current_value: float, context_id: str = "global", historical_values: List[float] = None) -> Optional[DomainEvent]:
         """
-        Advanced evaluation using statistical deviation (Sigma/Z-Score).
+        Advanced evaluation using statistical deviation (Sigma/Z-Score) 
+        AND trend-based prediction (Velocity).
         """
+        import numpy as np
         profile = self._get_profile(context_id)
         if not historical_values or len(historical_values) < profile.min_sample_size:
             return self._evaluate_simple_threshold(metric_type, current_value, context_id)
 
-        # Calculate mean and sample standard deviation (n-1 for unbiased estimate)
+        # --- Statistical Analysis (Z-Score) ---
         n = len(historical_values)
         mean = sum(historical_values) / n
         variance = sum((x - mean) ** 2 for x in historical_values) / (n - 1)
         std_dev = math.sqrt(variance)
 
-        if std_dev == 0:
-            return None
-
-        # Calculate Z-Score
-        z_score = abs(current_value - mean) / std_dev
-
-        # Check against profile sensitivity
-        # We assume the profile's threshold for this metric is actually a Z-Score target (e.g. 3.0 for 3-sigma)
-        threshold = profile.thresholds.get(metric_type, 3.0) 
+        # --- Trend Analysis (Linear Regression) ---
+        # We use the indices as a proxy for time steps if timestamps aren't provided
+        x = np.arange(len(historical_values))
+        y = np.array(historical_values)
+        m, c = np.polyfit(x, y, 1)
         
-        if z_score > (threshold * profile.sensitivity_multiplier):
+        # Predict the next value (at index n)
+        prediction = m * n + c
+        velocity = m
+
+        # 1. Check for Z-Score Breach (Reactive)
+        if std_dev > 0:
+            z_score = abs(current_value - mean) / std_dev
+            threshold = profile.thresholds.get(metric_type, 3.0)
+            
+            if z_score > (threshold * profile.sensitivity_multiplier):
+                return PatternDetectedEvent(
+                    severity=EventSeverity.ERROR,
+                    source="ContextualAnomalyDetector",
+                    pattern_type=f"{metric_type.name}_SIGMA_DEVIATION",
+                    metadata={
+                        "context_id": context_id,
+                        "z_score": z_score,
+                        "mean": mean,
+                        "std_dev": std_dev,
+                        "value": current_value,
+                        "velocity": velocity,
+                        "prediction": prediction
+                    }
+                )
+
+        # 2. Check for Trend Divergence (Preemptive/Proactive)
+        # If the current value is significantly far from the predicted trend line
+        trend_deviation = abs(current_value - prediction)
+        trend_threshold = max(trend_deviation, (mean * 0.1 if mean > 0 else 0.1)) * profile.sensitivity_multiplier
+
+        if trend_deviation > trend_threshold:
             return PatternDetectedEvent(
-                severity=EventSeverity.ERROR,
+                severity=EventSeverity.WARNING,
                 source="ContextualAnomalyDetector",
-                pattern_type=f"{metric_type.name}_SIGMA_DEVIATION",
+                pattern_type=f"{metric_type.name}_TREND_DIVERGENCE",
                 metadata={
                     "context_id": context_id,
-                    "z_score": z_score,
-                    "mean": mean,
-                    "std_dev": std_dev,
+                    "velocity": velocity,
+                    "prediction": prediction,
+                    "deviation": trend_deviation,
                     "value": current_value
                 }
             )

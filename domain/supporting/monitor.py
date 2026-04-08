@@ -53,81 +53,141 @@ class StateTracker:
         return snapshot
 
 
+
 class SnapshotAnomalyDetector:
     """
-    Compares the current snapshot against historical data to find significant patterns.
+    Compares the current snapshot against historical trends to predict and 
+    detect significant structural shifts (The Sentinel).
     """
     def __init__(self, structural_db_path_or_ledger, sensitivity: float = 2.0):
+        import numpy as np
+        import statistics
+        import uuid
+        import datetime
+        
+        self.np = np
+        self.stats = statistics
+        self.uuid = uuid
+        self.dt = datetime
+        self.sensitivity = sensitivity
+        
         if isinstance(structural_db_path_or_ledger, StructuralLedger):
             self.ledger = structural_db_path_or_ledger
         else:
             self.ledger = StructuralLedger(structural_db_path_or_ledger)
-        self.sensitivity = sensitivity
 
-    def detect_anomalies(self, current_snapshot: GraphSnapshot) -> List[AnomalyEvent]:
-        logger.info("Scanning for structural anomalies...")
+    def _predict_trend(self, history: list, key: str, current_ts: any) -> dict:
+        """Uses linear regression to predict the next value and its uncertainty."""
+        import numpy as np
+        
+        if len(history) < 2:
+            return {"expected": 0.0, "uncertainty": 0.0, "velocity": 0.0}
+
+        # Convert timestamps to relative seconds for regression
+        start_ts = history[0].timestamp
+        x = np.array([(h.timestamp - start_ts).total_seconds() for h in history])
+        
+        # Extract values for the specific key
+        y = []
+        for h in history:
+            val = getattr(h, key, 0.0) if hasattr(h, key) else 0.0
+            y.append(val)
+        
+        y = np.array(y)
+        
+        # Linear regression: y = mx + c
+        m, c = np.polyfit(x, y, 1)
+        
+        # Predict for current time
+        current_x = (current_ts - start_ts).total_seconds()
+        prediction = m * current_x + c
+        
+        # Uncertainty based on standard error of the estimate
+        residuals = y - (m * x + c)
+        uncertainty = np.std(residuals) if len(residuals) > 1 else 0.0
+        
+        return {"expected": max(0.0, prediction), "uncertainty": uncertainty, "velocity": m}
+
+    def detect_anomalies(self, current_snapshot: any) -> list:
+        import logging
+        import uuid
+        import numpy as np
+        
+        logger = logging.getLogger(__name__)
+        logger.info("Sentinel scanning for structural anomalies...")
         anomalies = []
 
         with self.ledger.session_scope() as session:
             history = session.query(GraphSnapshot).filter(
                 GraphSnapshot.timestamp < current_snapshot.timestamp
             ).order_by(GraphSnapshot.timestamp.desc()).all()
+            # Reverse to get chronological order for regression
+            history.reverse()
 
-            if len(history) < 2:
-                logger.info("Insufficient history for statistical analysis. Skipping.")
+            if len(history) < 3:
+                logger.info("Insufficient history for predictive analysis. Skipping.")
                 return []
 
+            # 1. MONITOR GLOBAL METRICS (Density & Community Count)
+            for metric_name in ['density', 'community_count']:
+                current_val = getattr(current_snapshot, metric_name)
+                trend = self._predict_trend(history, metric_name, current_snapshot.timestamp)
+                
+                # Check for deviation from predicted trend
+                deviation = abs(current_val - trend['expected'])
+                threshold = trend['uncertainty'] * self.sensitivity
+                
+                # Add a baseline floor to avoid noise in very stable systems
+                threshold = max(threshold, 0.05 if metric_name == 'density' else 0.5)
+
+                if deviation > threshold:
+                    anomalies.append(AnomalyEvent(
+                        id=str(uuid.uuid4()),
+                        anomaly_type="TREND_DIVERGENCE",
+                        description=f"Metric '{metric_name}' diverged from predicted trend. (Actual: {current_val:.3f}, Predicted: {trend['expected']:.3f})",
+                        severity="medium",
+                        trigger_data={
+                            "metric": metric_name,
+                            "actual": current_val,
+                            "expected": trend['expected'],
+                            "velocity": trend['velocity']
+                        }
+                    ))
+
+            # 2. MONITOR NODE HUB EMERGENCE (Velocity of Degree)
             for node_id, node_metrics in current_snapshot.centrality_metrics.items():
                 current_degree = node_metrics.get('degree', 0.0)
-
-                historical_degrees = []
+                
+                # Extract degree history for this specific node
+                node_history_degrees = []
+                node_history_ts = []
                 for snap in history:
                     hist_metrics = snap.centrality_metrics.get(node_id, {})
                     if hist_metrics:
-                        historical_degrees.append(hist_metrics.get('degree', 0.0))
-
-                if not historical_degrees and current_degree > 5.0:
-                    anomalies.append(AnomalyEvent(
-                        id=str(uuid.uuid4()),
-                        anomaly_type="HUB_EMERGENCE",
-                        description=f"New node '{node_id}' has emerged as an immediate hub with degree {current_degree:.2f}.",
-                        severity="high",
-                        trigger_data={"node_id": node_id, "new_degree": current_degree, "is_new": True}
-                    ))
-                    continue
-
-                if len(historical_degrees) >= 2:
-                    mean_deg = statistics.mean(historical_degrees)
-                    stdev_deg = statistics.stdev(historical_degrees) if len(historical_degrees) > 1 else 0.0
-
-                    threshold = max(mean_deg + (self.sensitivity * stdev_deg), mean_deg + 0.3)
-
-                    if current_degree > threshold:
+                        node_history_degrees.append(hist_metrics.get('degree', 0.0))
+                        node_history_ts.append((snap.timestamp - history[0].timestamp).total_seconds())
+                
+                if len(node_history_degrees) >= 3:
+                    x = np.array(node_history_ts)
+                    y = np.array(node_history_degrees)
+                    m, c = np.polyfit(x, y, 1)
+                    
+                    # Detect Acceleration: Is the degree increasing non-linearly?
+                    # For simplicity here, we'll trigger if velocity is exceptionally high
+                    if m > (self.sensitivity * 0.5): 
                         anomalies.append(AnomalyEvent(
                             id=str(uuid.uuid4()),
-                            anomaly_type="HUB_EMERGENCE",
-                            description=f"Node '{node_id}' has emerged as a significant hub. (Degree: {current_degree:.2f}, Hist Mean: {mean_deg:.2f})",
-                            severity="medium",
-                            trigger_data={"node_id": node_id, "new_degree": current_degree, "mean_degree": mean_deg}
+                            anomaly_type="STRUCTURAL_ACCELERATION",
+                            description=f"Node '{node_id}' is showing rapid growth. (Degree Velocity: {m:.2f}/unit-time)",
+                            severity="high",
+                            trigger_data={"node_id": node_id, "velocity": m, "current_degree": current_degree}
                         ))
-
-            historical_counts = [s.community_count for s in history]
-            mean_comm = sum(historical_counts) / len(historical_counts)
-
-            if abs(current_snapshot.community_count - mean_comm) >= 1:
-                anomalies.append(AnomalyEvent(
-                    id=str(uuid.uuid4()),
-                    anomaly_type="COMMUNITY_SHIFT",
-                    description=f"Significant shift in community structure: Count changed from ~{mean_comm:.1f} to {current_snapshot.community_count}.",
-                    severity="medium",
-                    trigger_data={"old_count": mean_comm, "new_count": current_snapshot.community_count}
-                ))
 
             if anomalies:
                 for anomaly in anomalies:
                     session.add(anomaly)
-                logger.info("Detected %d anomalies.", len(anomalies))
+                logger.info("Sentinel detected %d anomalies.", len(anomalies))
             else:
-                logger.info("No significant anomalies detected.")
+                logger.info("No structural divergences detected.")
 
             return anomalies

@@ -30,10 +30,11 @@ class RefinementEngine:
         self.analyzer = GraphAnalyzer(self.ledger)
         self.detector = detector
 
+    
     def analyze_for_refinement(self, context_id: str = "global") -> List[RefinementProposal]:
         """
         Scans the graph for structural bloat or redundancy using context-aware thresholds.
-        Detected anomalies are persisted as AnomalyEvent rows so InsightTrigger can pick them up.
+        Includes PREEMPTIVE detection based on trend velocity.
         """
         logger.info("Analyzing graph structure for context: %s...", context_id)
         self.analyzer.build_graph()
@@ -52,11 +53,16 @@ class RefinementEngine:
 
             if event:
                 detected_events.append(event)
+                
+                # Check if this is a PREEMPTIVE trend event
+                is_preemptive = event.pattern_type == "COMMUNITY_SIZE_TREND_DIVERGENCE"
+                desc_prefix = "PREEMPTIVE: Trend indicates imminent community explosion" if is_preemptive else "Anomaly detected in community size"
+                
                 proposal = RefinementProposal(
                     proposal_type="MERGE_COMMUNITY",
                     target_id=f"community_{i}",
-                    description=f"Anomaly detected in community size ({len(community)}). Proposing condensation.",
-                    data={"nodes": list(community), "event": event}
+                    description=f"{desc_prefix} ({len(community)} nodes).",
+                    data={"nodes": list(community), "event": event, "preemptive": is_preemptive}
                 )
                 proposals.append(proposal)
 
@@ -89,11 +95,14 @@ class RefinementEngine:
 
         if event:
             detected_events.append(event)
+            is_preemptive = event.pattern_type == "GRAPH_DENSITY_TREND_DIVERGENCE"
+            desc_prefix = "PREEMPTIVE: Rapid density acceleration detected" if is_preemptive else "Global graph density anomaly"
+            
             proposal = RefinementProposal(
                 proposal_type="GLOBAL_REBALANCE",
                 target_id="graph_root",
-                description=f"Global graph density anomaly ({density:.4f}) detected.",
-                data={"density": density, "event": event}
+                description=f"{desc_prefix} ({density:.4f}).",
+                data={"density": density, "event": event, "preemptive": is_preemptive}
             )
             proposals.append(proposal)
 
@@ -102,6 +111,7 @@ class RefinementEngine:
             self._persist_anomaly_events(detected_events)
 
         return proposals
+
 
     def _persist_anomaly_events(self, events) -> None:
         """Write PatternDetectedEvents as AnomalyEvent rows."""
