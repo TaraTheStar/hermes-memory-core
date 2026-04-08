@@ -180,11 +180,18 @@ class SnapshotAnomalyDetector:
                 if len(node_history_degrees) >= 3:
                     x = np.array(node_history_ts)
                     y = np.array(node_history_degrees)
+                    # Skip degenerate cases where all timestamps are identical
+                    if np.ptp(x) == 0:
+                        continue
                     m, c = np.polyfit(x, y, 1)
-                    
+
+                    # Guard against nan from degenerate data
+                    if np.isnan(m):
+                        continue
+
                     # Detect Acceleration: Is the degree increasing non-linearly?
                     # For simplicity here, we'll trigger if velocity is exceptionally high
-                    if m > (self.sensitivity * 0.5): 
+                    if m > (self.sensitivity * 0.5):
                         anomalies.append(AnomalyEvent(
                             id=str(uuid.uuid4()),
                             anomaly_type="STRUCTURAL_ACCELERATION",

@@ -9,8 +9,7 @@ DEFAULT_CONFIG_PATH = os.environ.get('HERMES_CONFIG_PATH', '/opt/data/config.yam
 _ALLOWED_ROOTS = (
     "/opt/data",
     "/data",
-    "/tmp",
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),  # project root
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),  # project root
 )
 
 
