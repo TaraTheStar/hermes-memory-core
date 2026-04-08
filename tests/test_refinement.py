@@ -1,7 +1,7 @@
 import os
 import pytest
 
-from domain.core.refinement_engine import RefinementEngine, RefinementProposal
+from domain.core.refinement_engine import RefinementEngine, GraphRefinementProposal
 from domain.core.anomaly_detector import ContextualAnomalyDetector
 from domain.core.anomaly_config import MetricType, ThresholdProfile
 from domain.supporting.ledger import StructuralLedger

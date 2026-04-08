@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from collections import OrderedDict
 from typing import Dict, Any, List, Optional, Set, Type
 from application.orchestrator import Orchestrator
 from domain.core.agent import HermesAgent, AgentStatus
@@ -25,7 +26,7 @@ class AutonomousOrchestrator(Orchestrator, GoalRunner):
         self.insight_trigger = insight_trigger
         self._monitoring_task: Optional[asyncio.Task] = None
         self._is_running = False
-        self._processed_event_ids: Set[str] = set()
+        self._processed_event_ids: OrderedDict[str, None] = OrderedDict()
         self._max_processed_ids = 10000
 
     async def start_monitoring(self, interval_seconds: int = 300, context: Dict[str, Any] = None):
@@ -70,12 +71,10 @@ class AutonomousOrchestrator(Orchestrator, GoalRunner):
                             if "milestone" in event['metadata'].get('type', '') or "integration" in event['text'].lower():
                                 goal = f"Investigate the recent semantic milestone: {event['text']}"
                                 logger.info(f"Trigger detected! New Goal: {goal}")
-                                self._processed_event_ids.add(event_id)
+                                self._processed_event_ids[event_id] = None
                                 # Evict oldest IDs to prevent unbounded growth
-                                if len(self._processed_event_ids) > self._max_processed_ids:
-                                    to_remove = len(self._processed_event_ids) - self._max_processed_ids
-                                    for _ in range(to_remove):
-                                        self._processed_event_ids.pop()
+                                while len(self._processed_event_ids) > self._max_processed_ids:
+                                    self._processed_event_ids.popitem(last=False)
                                 await self.run_goal(goal, context)
                                 break
 

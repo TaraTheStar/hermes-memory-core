@@ -132,5 +132,7 @@ class SemanticMemory:
         emb1 = np.array(res1['embeddings'][0])
         emb2 = np.array(res2['embeddings'][0])
 
-        distance = float(np.linalg.norm(emb1 - emb2))
+        # ChromaDB's default 'l2' metric returns squared L2 distance.
+        # Use the same here so similarity scores are consistent with query().
+        distance = float(np.sum((emb1 - emb2) ** 2))
         return 1.0 / (1.0 + distance)

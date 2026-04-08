@@ -20,8 +20,6 @@ class AgentTask:
         self.constraints = constraints or []
         self.created_at = datetime.datetime.now(timezone.utc)
 
-from typing import Dict, Any, Optional, List, Protocol, Union
-
 class RefinementProposal:
     """Represents a self-optimization proposal from an agent."""
     PROMPT_REFINEMENT = "PROMPT_REFINEMENT"
@@ -47,10 +45,6 @@ class RefinementProposal:
             "proposed": self.proposed_state,
             "rationale": self.rationale
         }
-
-class RefinementType:
-    PROMPT_REFINEMENT = "PROMPT_REFINEMENT"
-    TOOL_EXPANSION = "TOOL_EXPANSION"
 
 class AgentResult:
     """Represents the outcome of an agent's execution."""

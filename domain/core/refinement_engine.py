@@ -8,7 +8,7 @@ from domain.core.analyzer import GraphAnalyzer
 from domain.core.anomaly_detector import ContextualAnomalyDetector
 from domain.core.anomaly_config import MetricType
 
-class RefinementProposal:
+class GraphRefinementProposal:
     def __init__(self, proposal_type: str, target_id: str, description: str, data: Dict[str, Any]):
         self.proposal_type = proposal_type  # 'PRUNE_EDGE', 'MERGE_COMMUNITY', 'CREATE_CONCEPT'
         self.target_id = target_id
@@ -31,7 +31,7 @@ class RefinementEngine:
         self.detector = detector
 
     
-    def analyze_for_refinement(self, context_id: str = "global") -> List[RefinementProposal]:
+    def analyze_for_refinement(self, context_id: str = "global") -> List[GraphRefinementProposal]:
         """
         Scans the graph for structural bloat or redundancy using context-aware thresholds.
         Includes PREEMPTIVE detection based on trend velocity.
@@ -58,7 +58,7 @@ class RefinementEngine:
                 is_preemptive = event.pattern_type == "COMMUNITY_SIZE_TREND_DIVERGENCE"
                 desc_prefix = "PREEMPTIVE: Trend indicates imminent community explosion" if is_preemptive else "Anomaly detected in community size"
                 
-                proposal = RefinementProposal(
+                proposal = GraphRefinementProposal(
                     proposal_type="MERGE_COMMUNITY",
                     target_id=f"community_{i}",
                     description=f"{desc_prefix} ({len(community)} nodes).",
@@ -77,7 +77,7 @@ class RefinementEngine:
 
             if event:
                 detected_events.append(event)
-                proposal = RefinementProposal(
+                proposal = GraphRefinementProposal(
                     proposal_type="PRUNE_EDGE",
                     target_id=f"{u}->{v}",
                     description=f"Edge weight anomaly detected ({weight}). Potential redundancy.",
@@ -98,7 +98,7 @@ class RefinementEngine:
             is_preemptive = event.pattern_type == "GRAPH_DENSITY_TREND_DIVERGENCE"
             desc_prefix = "PREEMPTIVE: Rapid density acceleration detected" if is_preemptive else "Global graph density anomaly"
             
-            proposal = RefinementProposal(
+            proposal = GraphRefinementProposal(
                 proposal_type="GLOBAL_REBALANCE",
                 target_id="graph_root",
                 description=f"{desc_prefix} ({density:.4f}).",

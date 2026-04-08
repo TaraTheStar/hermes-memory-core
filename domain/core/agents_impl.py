@@ -1,6 +1,9 @@
+import asyncio
+import json
 from typing import Dict, Any, List, Optional
 from domain.core.agent import HermesAgent, AgentStatus, AgentTask, AgentResult
 from domain.core.ports import BaseLLMInterface
+from domain.core.prompt_sanitizer import sanitize_field
 
 class ResearcherAgent(HermesAgent):
     """
@@ -29,27 +32,28 @@ class ResearcherAgent(HermesAgent):
         return findings
 
     async def _reflect(self, findings: List[Dict[str, Any]], task: AgentTask, context: Dict[str, Any]) -> AgentResult:
-        # Extract the best piece of evidence from the findings
-        best_evidence = []
+        all_evidence = []
         summary = "No relevant evidence found."
         confidence = 0.0
+        has_error = False
 
         for finding in findings:
             if finding["type"] == "memory_match":
                 results = finding["results"]
                 if results:
-                    best_evidence = [r["text"] for r in results]
-                    summary = f"Found relevant information: {results[0]['text']}"
-                    confidence = 0.9
-                break
+                    all_evidence.extend(r["text"] for r in results)
+                    if not has_error:
+                        summary = f"Found relevant information: {results[0]['text']}"
+                        confidence = max(confidence, 0.9)
             elif finding["type"] == "error":
+                has_error = True
                 summary = finding["message"]
                 confidence = 0.0
 
         return AgentResult(
             finding=summary,
             confidence=confidence,
-            evidence=[{"text": e} for e in best_evidence]
+            evidence=[{"text": e} for e in all_evidence]
         )
 
 class AuditorAgent(HermesAgent):
@@ -86,10 +90,21 @@ class AuditorAgent(HermesAgent):
                 for model in (Project, Milestone, Skill, IdentityMarker):
                     all_node_ids.update(row.id for row in session.query(model.id).all())
 
+                # Cross-domain edges link structural entities to semantic event IDs
+                # stored in ChromaDB, not in the structural ledger.
+                _CROSS_DOMAIN_TYPES = {"temporal_context", "semantic_similarity"}
+
                 orphaned = 0
                 for edge in session.query(RelationalEdge).all():
-                    if edge.source_id not in all_node_ids or edge.target_id not in all_node_ids:
-                        orphaned += 1
+                    source_ok = edge.source_id in all_node_ids
+                    target_ok = edge.target_id in all_node_ids
+                    if edge.relationship_type in _CROSS_DOMAIN_TYPES:
+                        # Only the source must be a structural entity
+                        if not source_ok:
+                            orphaned += 1
+                    else:
+                        if not source_ok or not target_ok:
+                            orphaned += 1
 
             finding = {
                 "type": "ledger_check",
@@ -109,13 +124,13 @@ class AuditorAgent(HermesAgent):
 
     async def _reflect(self, findings: List[Dict[str, Any]], task: AgentTask, context: Dict[str, Any]) -> AgentResult:
         summary = "Audit complete."
-        confidence = 0.0
+        confidence = 1.0  # start optimistic, take the minimum
         evidence = []
+        errors = []
 
         for finding in findings:
             if finding["type"] == "error":
-                summary = finding["message"]
-                confidence = 0.0
+                errors.append(finding["message"])
                 continue
 
             if finding["type"] == "ledger_check":
@@ -125,14 +140,22 @@ class AuditorAgent(HermesAgent):
 
                 if not finding["has_entities"]:
                     summary = "Audit warning: ledger contains no entities. Change may be premature."
-                    confidence = 0.2
+                    confidence = min(confidence, 0.2)
                 elif orphaned > 0:
                     summary = f"Audit concern: {orphaned} orphaned edge(s) detected. Structural integrity at risk."
-                    confidence = 0.4
+                    confidence = min(confidence, 0.4)
                 else:
                     total = sum(counts.values())
                     summary = f"Audit passed: {total} entities verified, no orphaned edges."
-                    confidence = 0.9
+                    confidence = min(confidence, 0.9)
+
+        if errors:
+            summary = f"Audit encountered errors: {'; '.join(errors)}"
+            confidence = 0.0
+
+        # If no findings were processed at all, reflect that
+        if not evidence and not errors:
+            confidence = 0.0
 
         return AgentResult(
             finding=summary,
@@ -167,11 +190,11 @@ class RefinementAgent(HermesAgent):
                 prompt = (
                     "You are the Meta-Orchestrator Critic. Your role is to ensure system evolution is safe, "
                     "effective, and logically sound. Evaluate the following proposal.\n\n"
-                    f"Proposal Type: {proposal.proposal_type}\n"
-                    f"Target Component: {proposal.target_component}\n"
-                    f"Current State: {proposal.current_state}\n"
-                    f"Proposed State: {proposal.proposed_state}\n"
-                    f"Rationale: {proposal.rationale}\n\n"
+                    f"Proposal Type: {sanitize_field(proposal.proposal_type, 'proposal_type')}\n"
+                    f"Target Component: {sanitize_field(proposal.target_component, 'target')}\n"
+                    f"Current State: {sanitize_field(proposal.current_state, 'current_state')}\n"
+                    f"Proposed State: {sanitize_field(proposal.proposed_state, 'proposed_state')}\n"
+                    f"Rationale: {sanitize_field(proposal.rationale, 'rationale')}\n\n"
                     "Criteria:\n"
                     "1. Safety: Does this change risk breaking core agent logic or stability?\n"
                     "2. Utility: Does this change actually address the deficiency noted in the rationale?\n"
@@ -193,7 +216,6 @@ class RefinementAgent(HermesAgent):
                     if cleaned_response.startswith("```"):
                         cleaned_response = cleaned_response.split("\n", 1)[1].rsplit("```", 1)[0].strip()
                     
-                    import json
                     decision = json.loads(cleaned_response)
                     findings.append({
                         "type": "critique_result",

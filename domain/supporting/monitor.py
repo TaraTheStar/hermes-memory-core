@@ -76,16 +76,26 @@ class SnapshotAnomalyDetector:
         else:
             self.ledger = StructuralLedger(structural_db_path_or_ledger)
 
+    @staticmethod
+    def _normalize_ts(ts):
+        """Ensure a datetime is timezone-aware (assume UTC if naive)."""
+        from datetime import timezone
+        if ts.tzinfo is None:
+            return ts.replace(tzinfo=timezone.utc)
+        return ts
+
     def _predict_trend(self, history: list, key: str, current_ts: any) -> dict:
         """Uses linear regression to predict the next value and its uncertainty."""
         import numpy as np
-        
+
         if len(history) < 2:
             return {"expected": 0.0, "uncertainty": 0.0, "velocity": 0.0}
 
         # Convert timestamps to relative seconds for regression
-        start_ts = history[0].timestamp
-        x = np.array([(h.timestamp - start_ts).total_seconds() for h in history])
+        # Normalize to aware datetimes — SQLite drops tzinfo on round-trip
+        start_ts = self._normalize_ts(history[0].timestamp)
+        current_ts = self._normalize_ts(current_ts)
+        x = np.array([(self._normalize_ts(h.timestamp) - start_ts).total_seconds() for h in history])
         
         # Extract values for the specific key
         y = []
@@ -165,7 +175,7 @@ class SnapshotAnomalyDetector:
                     hist_metrics = snap.centrality_metrics.get(node_id, {})
                     if hist_metrics:
                         node_history_degrees.append(hist_metrics.get('degree', 0.0))
-                        node_history_ts.append((snap.timestamp - history[0].timestamp).total_seconds())
+                        node_history_ts.append((self._normalize_ts(snap.timestamp) - self._normalize_ts(history[0].timestamp)).total_seconds())
                 
                 if len(node_history_degrees) >= 3:
                     x = np.array(node_history_ts)
@@ -186,6 +196,9 @@ class SnapshotAnomalyDetector:
             if anomalies:
                 for anomaly in anomalies:
                     session.add(anomaly)
+                session.flush()
+                for anomaly in anomalies:
+                    session.expunge(anomaly)
                 logger.info("Sentinel detected %d anomalies.", len(anomalies))
             else:
                 logger.info("No structural divergences detected.")

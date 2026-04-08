@@ -1,38 +1,56 @@
+import re
 from typing import Any, Optional
 from domain.core.acl.base import BaseTranslator
 from domain.core.events import InfrastructureErrorEvent, EventSeverity
 
+# Matches common API key patterns (sk-..., key-..., bearer tokens, hex strings 32+)
+_SECRET_PATTERN = re.compile(
+    r'(sk-[a-zA-Z0-9]{20,}|key-[a-zA-Z0-9]{20,}|Bearer\s+\S{20,}|[a-f0-9]{32,})',
+    re.IGNORECASE,
+)
+
+
+def _scrub_secrets(msg: str) -> str:
+    """Replace probable secrets in an error message with a redaction marker."""
+    return _SECRET_PATTERN.sub("[REDACTED]", msg)
+
+
 class LLMTranslator(BaseTranslator):
     """
     Translator for LLM-related exceptions.
-    Converts technical API errors (OpenAI, connection errors, etc.) 
+    Converts technical API errors (OpenAI, connection errors, etc.)
     into semantic InfrastructureErrorEvent domain events.
     """
 
+    # Map exception class names to (severity, error_code).
+    # Using class names avoids importing every provider SDK while being
+    # more reliable than substring matching on the message body.
+    _TYPE_MAP = {
+        "AuthenticationError": (EventSeverity.CRITICAL, "LLM_AUTH_FAILURE"),
+        "RateLimitError":      (EventSeverity.WARNING,  "LLM_RATE_LIMIT"),
+        "APIConnectionError":  (EventSeverity.ERROR,    "LLM_CONNECTION_TIMEOUT"),
+        "Timeout":             (EventSeverity.ERROR,    "LLM_CONNECTION_TIMEOUT"),
+        "TimeoutError":        (EventSeverity.ERROR,    "LLM_CONNECTION_TIMEOUT"),
+        "ConnectionError":     (EventSeverity.ERROR,    "LLM_CONNECTION_TIMEOUT"),
+        "BadRequestError":     (EventSeverity.ERROR,    "LLM_INVALID_REQUEST"),
+        "InvalidRequestError": (EventSeverity.ERROR,    "LLM_INVALID_REQUEST"),
+    }
+
     def translate_exception(self, exception: Exception) -> InfrastructureErrorEvent:
-        error_msg = str(exception)
         severity = EventSeverity.ERROR
         error_code = "LLM_API_FAILURE"
 
-        # Specific mapping for common LLM errors
-        if "AuthenticationError" in error_msg or "api_key" in error_msg.lower():
-            severity = EventSeverity.CRITICAL
-            error_code = "LLM_AUTH_FAILURE"
-        elif "RateLimitError" in error_msg or "429" in error_msg:
-            severity = EventSeverity.WARNING
-            error_code = "LLM_RATE_LIMIT"
-        elif "ConnectionError" in error_msg or "timeout" in error_msg.lower():
-            severity = EventSeverity.ERROR
-            error_code = "LLM_CONNECTION_TIMEOUT"
-        elif "InvalidRequestError" in error_msg or "400" in error_msg:
-            severity = EventSeverity.ERROR
-            error_code = "LLM_INVALID_REQUEST"
+        # Walk the MRO so subclasses of known types are also matched
+        for cls in type(exception).__mro__:
+            if cls.__name__ in self._TYPE_MAP:
+                severity, error_code = self._TYPE_MAP[cls.__name__]
+                break
 
         return InfrastructureErrorEvent(
             severity=severity,
             source="LLM_Infrastructure",
             error_code=error_code,
-            original_exception=error_msg,
+            original_exception=_scrub_secrets(str(exception)),
             metadata={"exception_type": type(exception).__name__}
         )
 

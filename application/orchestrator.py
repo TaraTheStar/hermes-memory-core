@@ -1,9 +1,11 @@
 import asyncio
+import json
 import logging
 from typing import Dict, Any, List, Optional, Type
 from domain.core.agent import HermesAgent, AgentStatus, AgentTask, AgentResult
 from domain.core.ports.ingestor import IntelligenceIngestor
 from domain.core.refinement_registry import RefinementRegistry
+from domain.core.prompt_sanitizer import sanitize_field
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +19,7 @@ class Orchestrator:
         self.llm = llm_interface
         self.active_agents: List[HermesAgent] = []
         self._max_agent_history = 100
+        self._max_concurrent_agents = 10
         self.ingestor = ingestor
         self.refinement_registry = refinement_registry or RefinementRegistry()
 
@@ -44,11 +47,10 @@ class Orchestrator:
         available_roles = list(self.registry.keys())
         prompt = "Break the following goal into sub-tasks. "
         prompt += "Available agent roles: " + str(available_roles) + ".\n\n"
-        prompt += "Goal: " + goal + "\n\n"
+        prompt += "Goal: " + sanitize_field(goal, "goal") + "\n\n"
         prompt += "Respond with a JSON array where each element has keys: 'role' (one of " + str(available_roles) + "), 'goal' (sub-task description), 'constraints' (list of strings). Return ONLY the JSON array."
         
         try:
-            import json
             raw = await asyncio.to_thread(self.llm.complete, prompt)
             # Extract JSON array from response (handle markdown fences)
             raw = raw.strip()
@@ -59,7 +61,7 @@ class Orchestrator:
                 # Validate roles — drop unknown ones, ensure at least one task
                 valid = [t for t in tasks if t.get("role") in self.registry]
                 if valid:
-                    return valid
+                    return valid[:self._max_concurrent_agents]
         except Exception as e:
             logger.warning("LLM decomposition failed, falling back to heuristic: %s", e)
 
@@ -109,8 +111,9 @@ class Orchestrator:
         logger.info("Dispatched %d sub-tasks.", len(tasks))
         
         # Prepare the agent coroutines for parallel execution
+        semaphore = asyncio.Semaphore(self._max_concurrent_agents)
         agent_tasks = []
-        
+
         for i, task in enumerate(tasks):
             role = tasks_data[i]["role"]
             if role in self.registry:
@@ -118,15 +121,15 @@ class Orchestrator:
                 agent_id = f"{role}_{i:02d}"
                 agent_instance = self.registry[role](agent_id, role, self.llm)
                 self.active_agents.append(agent_instance)
-                
+
                 logger.info("Spawning %s (%s)...", agent_instance.agent_id, role)
-                
-                # Schedule the agent's run method
-                agent_tasks.append(self._execute_agent(agent_instance, task, context))
+
+                # Schedule the agent's run method with concurrency limit
+                agent_tasks.append(self._execute_agent_bounded(semaphore, agent_instance, task, context))
             else:
                 logger.warning("Unknown role: %s", role)
 
-        # Execute all agents concurrently
+        # Execute all agents concurrently (bounded by semaphore)
         raw_results = await asyncio.gather(*agent_tasks)
         
         # Evict completed agents to prevent unbounded growth
@@ -156,8 +159,17 @@ class Orchestrator:
             logger.info("%d refinement proposals detected from agent findings.", len(refinement_proposals))
             await self._handle_refinement_proposals(refinement_proposals, context)
         # --------------------------------------------
-        
+
+        # --- Meta-Reflection: evaluate if the roster needs a new role ---
+        await self._perform_meta_reflection(goal, final_report)
+        # ---------------------------------------------------------------
+
         return final_report
+
+    async def _execute_agent_bounded(self, semaphore: asyncio.Semaphore, agent: HermesAgent, task: AgentTask, context: Dict[str, Any]) -> AgentResult:
+        """Wraps _execute_agent with a concurrency semaphore."""
+        async with semaphore:
+            return await self._execute_agent(agent, task, context)
 
     async def _execute_agent(self, agent: HermesAgent, task: AgentTask, context: Dict[str, Any]) -> AgentResult:
         """Helper to run an agent and catch any lifecycle failures."""
@@ -211,15 +223,19 @@ class Orchestrator:
         Processes refinement proposals by using the LLM to validate them.
         In a full implementation, this would trigger a RefinementAgent.
         """
+        if not self.llm:
+            logger.warning("No LLM configured — cannot evaluate %d refinement proposal(s).", len(proposals))
+            return
+
         for proposal in proposals:
             logger.info("Evaluating proposal: %s", proposal.rationale)
-            
+
             prompt = "You are the Meta-Orchestrator Critic. Evaluate the following self-optimization proposal from an agent. Decide if the proposal is valid, safe, and would improve system performance.\n\n"
-            prompt += "Proposal Type: " + str(proposal.proposal_type) + "\n"
-            prompt += "Target: " + str(proposal.target_component) + "\n"
-            prompt += "Current State: " + str(proposal.current_state) + "\n"
-            prompt += "Proposed State: " + str(proposal.proposed_state) + "\n"
-            prompt += "Rationale: " + str(proposal.rationale) + "\n\n"
+            prompt += "Proposal Type: " + sanitize_field(proposal.proposal_type, "proposal_type") + "\n"
+            prompt += "Target: " + sanitize_field(proposal.target_component, "target") + "\n"
+            prompt += "Current State: " + sanitize_field(proposal.current_state, "current_state") + "\n"
+            prompt += "Proposed State: " + sanitize_field(proposal.proposed_state, "proposed_state") + "\n"
+            prompt += "Rationale: " + sanitize_field(proposal.rationale, "rationale") + "\n\n"
             prompt += "Respond with JSON: {'approved': true/false, 'reasoning': '...'}"
             
             try:
@@ -229,7 +245,6 @@ class Orchestrator:
                 if raw.startswith("```"):
                     raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
                 
-                import json
                 decision = json.loads(raw)
                 if decision.get("approved"):
                     logger.info("Proposal APPROVED: %s", decision.get("reasoning"))
@@ -241,44 +256,65 @@ class Orchestrator:
             except Exception as e:
                 logger.warning("Failed to evaluate refinement proposal: %s", e)
 
+    _META_REFLECTION_CONFIDENCE_THRESHOLD = 0.7
+
     async def _perform_meta_reflection(self, goal: str, report: Dict[str, Any]) -> None:
         """
-        Analyzes the orchestration summary to decide if the current agent roster 
+        Analyzes the orchestration summary to decide if the current agent roster
         is sufficient or if a new agent role should be bootstrapped.
+
+        Triggered after run_goal when aggregate confidence is low, suggesting
+        the existing roles couldn't handle the goal well.
         """
-        import logging
-        import json
-        import asyncio
-        logger = logging.getLogger(__name__)
-        
+        if not self.llm:
+            return
+
         summary = report.get("orchestration_summary", {})
         confidence = summary.get("aggregate_confidence", 1.0)
         dispatched = summary.get("agents_dispatched", 0)
-        
-        if confidence < 0.7 or dispatched < 1:
-            logger.info("Meta-reflection: Low confidence detected (%.2f). Evaluating role evolution...", confidence)
-            
-            roles_list = list(self.registry.keys())
-            prompt = "Break the following goal into sub-tasks. "
-            prompt += "Available agent roles: " + str(roles_list) + ".\n\n"
-            prompt += "Goal: " + goal + "\n\n"
-            prompt += "Outcome: Resulted in only " + str(round(confidence * 100, 1)) + "% confidence with " + str(dispatched) + " agents.\n\n"
-            prompt += "Propose a new, specialized agent role that could better handle this task. Respond in JSON format: {'role_name': '...', 'description': '...', 'capabilities': ['...']}"
-            
-            try:
-                raw = await asyncio.to_thread(self.llm.complete, prompt)
-                # Clean markdown if present
-                raw = raw.strip()
-                if raw.startswith("```"):
-                    raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-                
-                suggestion = json.loads(raw)
-                role_name = suggestion.get("role_name")
-                
-                if role_name and role_name not in self.registry:
-                    logger.info("Meta-reflection: New role suggested: '%s'. Bootstrapping...", role_name)
-                    from domain.core.agents_impl import ResearcherAgent 
-                    self.register_agent_role(role_name, ResearcherAgent) 
-                    logger.info("Meta-reflection: Successfully bootstrapped role '%s'.", role_name)
-            except Exception as e:
-                logger.warning("Meta-reflection failed: %s", e)
+
+        if confidence >= self._META_REFLECTION_CONFIDENCE_THRESHOLD and dispatched >= 1:
+            return
+
+        logger.info("Meta-reflection: Low confidence (%.2f) with %d agent(s). Evaluating role evolution...",
+                     confidence, dispatched)
+
+        roles_list = list(self.registry.keys())
+        prompt = (
+            "You are the Meta-Orchestrator for a multi-agent system. The system just attempted "
+            "a goal but produced low-confidence results, suggesting the current agent roster is insufficient.\n\n"
+            f"Available agent roles: {roles_list}\n"
+            f"Goal attempted: {sanitize_field(goal, 'goal')}\n"
+            f"Outcome: {confidence * 100:.1f}% confidence with {dispatched} agent(s).\n\n"
+            "Propose a single new specialized agent role that could better handle this type of task. "
+            "Respond in JSON: {\"role_name\": \"...\", \"description\": \"...\"}\n"
+            "If the existing roles are sufficient and the low confidence is expected, "
+            "respond with: {\"role_name\": null, \"description\": \"No new role needed.\"}"
+        )
+
+        try:
+            raw = await asyncio.to_thread(self.llm.complete, prompt)
+            raw = raw.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+
+            suggestion = json.loads(raw)
+            if not isinstance(suggestion, dict):
+                return
+
+            role_name = suggestion.get("role_name")
+            if not role_name or not isinstance(role_name, str):
+                logger.info("Meta-reflection: LLM determined no new role is needed.")
+                return
+
+            if role_name in self.registry:
+                logger.info("Meta-reflection: Suggested role '%s' already exists.", role_name)
+                return
+
+            # Bootstrap the new role using ResearcherAgent as a general-purpose base.
+            # A future iteration could select the base class from the suggestion.
+            from domain.core.agents_impl import ResearcherAgent
+            self.register_agent_role(role_name, ResearcherAgent)
+            logger.info("Meta-reflection: Bootstrapped new role '%s'.", role_name)
+        except Exception as e:
+            logger.warning("Meta-reflection failed: %s", e)

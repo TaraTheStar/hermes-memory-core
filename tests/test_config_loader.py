@@ -8,6 +8,12 @@ from domain.supporting.config_loader import ConfigLoader
 def test_missing_config_file_raises():
     """Missing config file should raise FileNotFoundError with helpful message."""
     with pytest.raises(FileNotFoundError, match="HERMES_CONFIG_PATH"):
+        ConfigLoader("/tmp/hermes_nonexistent_config.yaml")
+
+
+def test_path_outside_allowlist_raises():
+    """Config path outside allowed directories should raise ValueError."""
+    with pytest.raises(ValueError, match="outside the allowed directories"):
         ConfigLoader("/nonexistent/path/config.yaml")
 
 

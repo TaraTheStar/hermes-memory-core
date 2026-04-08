@@ -1,5 +1,6 @@
 from typing import Any, Optional
 from domain.core.acl.base import BaseTranslator
+from domain.core.acl.llm_translator import _scrub_secrets
 from domain.core.events import InfrastructureErrorEvent, EventSeverity
 
 class StorageTranslator(BaseTranslator):
@@ -41,7 +42,7 @@ class StorageTranslator(BaseTranslator):
             severity=severity,
             source="Storage_Infrastructure",
             error_code=error_code,
-            original_exception=error_msg,
+            original_exception=_scrub_secrets(error_msg),
             metadata={"exception_type": type(exception).__name__}
         )
 

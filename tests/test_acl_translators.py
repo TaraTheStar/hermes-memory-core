@@ -5,31 +5,43 @@ from domain.core.acl.storage_translator import StorageTranslator
 from domain.core.events import EventSeverity
 
 
+# Simulate provider exception types (e.g. from openai SDK) so the
+# type-based classifier in LLMTranslator can match by class name.
+class AuthenticationError(Exception):
+    pass
+
+class RateLimitError(Exception):
+    pass
+
+class InvalidRequestError(Exception):
+    pass
+
+
 class TestLLMTranslator:
     @pytest.fixture
     def translator(self):
         return LLMTranslator()
 
     def test_connection_error(self, translator):
-        exc = ConnectionError("ConnectionError: server unreachable")
+        exc = ConnectionError("server unreachable")
         event = translator.translate_exception(exc)
         assert event.error_code == "LLM_CONNECTION_TIMEOUT"
         assert event.severity == EventSeverity.ERROR
 
     def test_auth_error(self, translator):
-        exc = Exception("AuthenticationError: invalid api_key")
+        exc = AuthenticationError("invalid api_key")
         event = translator.translate_exception(exc)
         assert event.error_code == "LLM_AUTH_FAILURE"
         assert event.severity == EventSeverity.CRITICAL
 
     def test_rate_limit(self, translator):
-        exc = Exception("RateLimitError: 429 Too Many Requests")
+        exc = RateLimitError("429 Too Many Requests")
         event = translator.translate_exception(exc)
         assert event.error_code == "LLM_RATE_LIMIT"
         assert event.severity == EventSeverity.WARNING
 
     def test_invalid_request(self, translator):
-        exc = Exception("InvalidRequestError: 400 bad prompt")
+        exc = InvalidRequestError("400 bad prompt")
         event = translator.translate_exception(exc)
         assert event.error_code == "LLM_INVALID_REQUEST"
 

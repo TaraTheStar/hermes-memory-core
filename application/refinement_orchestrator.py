@@ -3,7 +3,7 @@ import re
 from typing import List, Dict, Any, Optional
 from domain.supporting.ledger import StructuralLedger
 from application.orchestrator import Orchestrator
-from domain.core.refinement_engine import RefinementEngine, RefinementProposal
+from domain.core.refinement_engine import RefinementEngine, GraphRefinementProposal
 from domain.core.models import Skill, RelationalEdge
 from domain.core.anomaly_detector import ContextualAnomalyDetector
 
@@ -92,7 +92,7 @@ class RefinementOrchestrator:
                 return True
         return False
 
-    async def _execute_proposal(self, proposal: RefinementProposal):
+    async def _execute_proposal(self, proposal: GraphRefinementProposal):
         """
         Applies the change to the Structural Ledger.
         """

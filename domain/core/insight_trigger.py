@@ -22,24 +22,36 @@ class InsightTrigger:
     async def process_new_anomalies(self, context: Optional[Dict[str, Any]] = None):
         """
         Fetches unhandled anomalies and triggers orchestration for each.
+        Each anomaly is committed independently so a failure on one does not
+        roll back progress on previously processed anomalies.
         """
         context = context or {}
         with self.ledger.session_scope() as session:
             unprocessed = session.query(AnomalyEvent).filter(
                 AnomalyEvent.processed == False
             ).order_by(AnomalyEvent.timestamp.desc()).limit(5).all()
+            anomaly_ids = [a.id for a in unprocessed]
 
-            if not unprocessed:
-                logger.info("No unprocessed anomalies to handle.")
-                return
+        if not anomaly_ids:
+            logger.info("No unprocessed anomalies to handle.")
+            return
 
-            logger.info("Found %d unprocessed anomalies. Generating investigation goals...", len(unprocessed))
+        logger.info("Found %d unprocessed anomalies. Generating investigation goals...", len(anomaly_ids))
 
-            for anomaly in unprocessed:
+        for anomaly_id in anomaly_ids:
+            with self.ledger.session_scope() as session:
+                anomaly = session.get(AnomalyEvent, anomaly_id)
+                if anomaly is None or anomaly.processed:
+                    continue
+
                 goal = self._generate_goal_from_anomaly(anomaly)
                 if goal:
                     logger.info("Triggering goal runner with goal: '%s'", goal)
-                    await self.goal_runner.run_goal(goal, context)
+                    try:
+                        await self.goal_runner.run_goal(goal, context)
+                    except Exception:
+                        logger.exception("Goal runner failed for anomaly %s", anomaly_id)
+                        continue
                 else:
                     logger.warning("Could not generate goal for anomaly: %s", anomaly.anomaly_type)
 

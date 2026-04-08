@@ -8,6 +8,7 @@ config.yaml
 
 # Python
 __pycache__/
+venv/
 *.py[cod]
 *.egg-info/
 dist/

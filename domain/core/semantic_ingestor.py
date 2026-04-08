@@ -4,6 +4,7 @@ from typing import Dict, Any, List, Optional, Type
 from domain.core.ports.ingestor import IntelligenceIngestor
 from domain.core.semantic_memory import SemanticMemory
 from domain.core.ports import BaseLLMInterface
+from domain.core.prompt_sanitizer import sanitize_field
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +42,8 @@ class SemanticIngestor(IntelligenceIngestor):
                 f"You are the Intelligence Synthesis engine for the Hermes Memory System. "
                 f"Your task is to take a complex orchestration report and compress it into a single, "
                 f"high-signal, professional sentence that can be stored in long-term memory.\n\n"
-                f"GOAL: {goal}\n"
-                f"FINDINGS:\n{findings_str}\n\n"
+                f"GOAL: {sanitize_field(goal, 'goal')}\n"
+                f"FINDINGS:\n{sanitize_field(findings_str, 'findings')}\n\n"
                 f"INSTRUCTION: Output ONLY the single sentence. No preamble. No commentary. "
                 f"Focus on the 'what' and the 'why'. The sentence must be dense and descriptive.\n\n"
                 f"SYNTHESIZED EVENT:"

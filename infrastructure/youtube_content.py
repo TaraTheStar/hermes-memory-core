@@ -1,6 +1,8 @@
 import os
+import shutil
 import subprocess
 import re
+import tempfile
 from typing import List, Dict, Any, Optional
 
 class YouTubeContentSkill:
@@ -19,6 +21,8 @@ class YouTubeContentSkill:
         match = re.search(pattern, url)
         return match.group(1) if match else None
 
+    _LANG_PATTERN = re.compile(r'^[a-zA-Z]{2,3}(-[a-zA-Z]{2,4})?$')
+
     def get_transcript(self, video_url: str, lang: str = 'en') -> Dict[str, Any]:
         """
         Fetches a transcript for the given URL using yt-dlp.
@@ -28,18 +32,14 @@ class YouTubeContentSkill:
         if not video_id:
             return {"status": "error", "error": "Invalid YouTube URL"}
 
+        if not self._LANG_PATTERN.match(lang):
+            return {"status": "error", "error": "Invalid language code"}
+
+        # Use a private temp directory to avoid TOCTOU races in shared /tmp
+        tmp_dir = tempfile.mkdtemp(prefix="yt_sub_")
         try:
-            # Using a more robust approach:
-            # 1. Get the subtitles via yt-dlp command line
-            # 2. Download the sub as a .vtt or .srt file
-            
-            output_template = f"/tmp/yt_sub_{video_id}"
-            
-            # We'll try to get the subtitles. 
-            # --write-auto-subs: get auto-generated if manual is missing
-            # --sub-lang: specify language
-            # --skip-download: don't download the video
-            # --convert-subs srt: convert to srt for easier parsing
+            output_template = os.path.join(tmp_dir, f"yt_sub_{video_id}")
+
             cmd = [
                 "yt-dlp",
                 "--skip-download",
@@ -47,27 +47,25 @@ class YouTubeContentSkill:
                 "--sub-lang", lang,
                 "--convert-subs", "srt",
                 "-o", output_template,
-                video_url
+                "--", video_url
             ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            
-            # yt-dlp creates files like: /tmp/yt_sub_ID.en.srt
-            # We need to find the actual file created.
+
+            subprocess.run(cmd, capture_output=True, text=True, check=True)
+
+            # Find the .srt file yt-dlp created in our private directory
             found_file = None
-            for f in os.listdir("/tmp"):
-                if f.startswith(f"yt_sub_{video_id}") and f.endswith(".srt"):
-                    found_file = os.path.join("/tmp", f)
+            for f in os.listdir(tmp_dir):
+                if f.endswith(".srt"):
+                    found_file = os.path.join(tmp_dir, f)
                     break
-            
+
             if not found_file:
                 return {"status": "error", "error": f"Could not find {lang} subtitles for video {video_id}"}
 
             with open(found_file, 'r', encoding='utf-8') as f:
                 srt_content = f.read()
-            
+
             # Basic SRT to text conversion
-            # Remove timestamps and indices
             lines = srt_content.split('\n')
             text_lines = []
             for line in lines:
@@ -75,11 +73,8 @@ class YouTubeContentSkill:
                 if not line or line.isdigit() or "-->" in line:
                     continue
                 text_lines.append(line)
-            
+
             full_text = " ".join(text_lines)
-            
-            # Cleanup
-            os.remove(found_file)
 
             return {
                 "status": "success",
@@ -100,6 +95,8 @@ class YouTubeContentSkill:
                 "error": str(e),
                 "video_id": video_id
             }
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
 if __name__ == "__main__":
     # Quick Test with the video the user provided

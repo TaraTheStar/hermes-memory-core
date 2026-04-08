@@ -28,7 +28,7 @@ def upgrade() -> None:
     sa.Column('description', sa.String(), nullable=False),
     sa.Column('severity', sa.String(), nullable=True),
     sa.Column('trigger_data', sa.JSON(), nullable=True),
-    sa.Column('processed', sa.Boolean(), nullable=True),
+    sa.Column('processed', sa.Boolean(), nullable=False, server_default=sa.text("0")),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('graph_snapshots',
