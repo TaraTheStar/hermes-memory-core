@@ -1,5 +1,4 @@
 import os
-import shutil
 import pytest
 from datetime import datetime, timezone
 
@@ -8,16 +7,11 @@ from domain.supporting.ledger import StructuralLedger
 
 
 @pytest.fixture(scope="module")
-def test_paths():
-    db = "/tmp/hermes_test_synthesis.db"
-    semantic = "/tmp/hermes_test_synthesis_semantic"
-
-    if os.path.exists(db):
-        os.remove(db)
-    if os.path.exists(semantic):
-        shutil.rmtree(semantic)
-    os.makedirs(semantic)
-
+def test_paths(tmp_path_factory):
+    base = tmp_path_factory.mktemp("synthesis")
+    db = str(base / "synthesis.db")
+    semantic = str(base / "semantic")
+    os.makedirs(semantic, exist_ok=True)
     return db, semantic
 
 
@@ -94,16 +88,10 @@ def test_incremental_scan(engine):
 
 class TestSynthesisCooccurrence:
     @pytest.fixture(autouse=True)
-    def _setup(self):
-        db = "/tmp/hermes_test_synthesis_cooc.db"
-        semantic = "/tmp/hermes_test_synthesis_cooc_semantic"
-
-        if os.path.exists(db):
-            os.remove(db)
-        if os.path.exists(semantic):
-            shutil.rmtree(semantic)
-        os.makedirs(semantic)
-
+    def _setup(self, tmp_path):
+        db = str(tmp_path / "synthesis_cooc.db")
+        semantic = str(tmp_path / "semantic_cooc")
+        os.makedirs(semantic, exist_ok=True)
         self.engine = SynthesisEngine(semantic, db)
 
     def test_cooccurrence_needs_two_events(self):
@@ -194,3 +182,54 @@ class TestSynthesisEdgeCases:
         )
         loaded = self.engine._load_watermark(SynthesisEngine._TEMPORAL_WATERMARK_KEY)
         assert loaded is None
+
+
+class TestAttributeSymmetryScan:
+    @pytest.fixture(autouse=True)
+    def _setup(self, tmp_path):
+        db = str(tmp_path / "symmetry.db")
+        semantic = str(tmp_path / "semantic")
+        os.makedirs(semantic, exist_ok=True)
+        self.engine = SynthesisEngine(semantic, db)
+        self.ledger = self.engine.ledger
+
+    def test_keyword_intersection_creates_edge(self):
+        """Skills sharing a symmetry keyword should produce an edge."""
+        self.ledger.add_skill("python scripting", "writing python scripts")
+        self.ledger.add_skill("python automation", "automating with python")
+        result = self.engine.run_attribute_symmetry_scan()
+        assert result >= 1
+
+    def test_substring_containment_creates_edge(self):
+        """If one skill name is a substring of another, an edge should be created."""
+        self.ledger.add_skill("rust", "systems language")
+        self.ledger.add_skill("rust async", "async programming in rust")
+        result = self.engine.run_attribute_symmetry_scan()
+        assert result >= 1
+
+    def test_unrelated_skills_no_edge(self):
+        """Skills with no keyword overlap or substring relation should not produce edges."""
+        self.ledger.add_skill("cooking", "making food", proficiency=0.5)
+        self.ledger.add_skill("gardening", "growing plants", proficiency=0.5)
+        result = self.engine.run_attribute_symmetry_scan()
+        assert result == 0
+
+    def test_no_duplicate_edges_on_rescan(self):
+        """Running the scan twice should not create duplicate edges."""
+        self.ledger.add_skill("python web", "web dev with python")
+        self.ledger.add_skill("python data", "data science with python")
+        first = self.engine.run_attribute_symmetry_scan()
+        second = self.engine.run_attribute_symmetry_scan()
+        assert first >= 1
+        assert second == 0
+
+    def test_custom_symmetry_keywords(self, tmp_path):
+        """Custom symmetry_keywords should be used instead of defaults."""
+        db = str(tmp_path / "custom_kw.db")
+        semantic = str(tmp_path / "custom_kw_semantic")
+        os.makedirs(semantic, exist_ok=True)
+        engine = SynthesisEngine(semantic, db, symmetry_keywords={"cooking"})
+        engine.ledger.add_skill("cooking basics", "basic cooking skills")
+        engine.ledger.add_skill("cooking advanced", "advanced cooking techniques")
+        result = engine.run_attribute_symmetry_scan()
+        assert result >= 1

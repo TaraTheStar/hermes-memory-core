@@ -45,7 +45,7 @@ async def test_plan_exception_sets_failed():
     assert agent.status == AgentStatus.FAILED
     assert result.confidence == 0.0
     assert result.status == AgentStatus.FAILED
-    assert "plan failed" in result.finding
+    assert "ValueError" in result.finding
 
 
 @pytest.mark.asyncio

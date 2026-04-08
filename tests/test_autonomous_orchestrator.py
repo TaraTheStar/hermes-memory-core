@@ -171,3 +171,85 @@ class TestSemanticEventFiltering:
         await self._run_one_iteration(orch)
 
         assert len(goals_run) == 0
+
+
+class TestCircuitBreaker:
+    """Tests for the circuit breaker that stops monitoring after consecutive errors."""
+
+    @pytest.mark.asyncio
+    async def test_circuit_breaker_trips_after_max_errors(self, registry):
+        """After _max_consecutive_errors, _is_running should become False."""
+        orch = AutonomousOrchestrator(registry)
+        orch._max_consecutive_errors = 3
+
+        # Patch insight_trigger to always raise
+        mock_trigger = MagicMock()
+        mock_trigger.process_new_anomalies = AsyncMock(side_effect=RuntimeError("boom"))
+        orch.insight_trigger = mock_trigger
+
+        # Patch sleep to not actually wait
+        sleep_durations = []
+        original_sleep = asyncio.sleep
+        async def _fast_sleep(seconds):
+            sleep_durations.append(seconds)
+            await original_sleep(0)
+        asyncio.sleep = _fast_sleep
+        try:
+            orch._is_running = True
+            await orch._monitoring_loop(300, {})
+        finally:
+            asyncio.sleep = original_sleep
+
+        assert orch._is_running is False
+        assert orch._consecutive_errors >= 3
+
+    @pytest.mark.asyncio
+    async def test_exponential_backoff_on_errors(self, registry):
+        """Error sleep should use exponential backoff, not the full interval."""
+        orch = AutonomousOrchestrator(registry)
+        orch._max_consecutive_errors = 3
+
+        mock_trigger = MagicMock()
+        mock_trigger.process_new_anomalies = AsyncMock(side_effect=RuntimeError("fail"))
+        orch.insight_trigger = mock_trigger
+
+        sleep_durations = []
+        original_sleep = asyncio.sleep
+        async def _fast_sleep(seconds):
+            sleep_durations.append(seconds)
+            await original_sleep(0)
+        asyncio.sleep = _fast_sleep
+        try:
+            orch._is_running = True
+            await orch._monitoring_loop(300, {})
+        finally:
+            asyncio.sleep = original_sleep
+
+        # Should have exponential backoff, NOT 300s each time
+        # Expected: 5, 10 (breaker trips on 3rd error, no sleep after trip)
+        assert len(sleep_durations) == 2  # 2 sleeps before the 3rd error trips breaker
+        assert sleep_durations[0] == 5    # 5 * 2^0
+        assert sleep_durations[1] == 10   # 5 * 2^1
+
+    @pytest.mark.asyncio
+    async def test_successful_iteration_resets_error_count(self, registry):
+        """A successful iteration should reset _consecutive_errors to 0."""
+        orch = AutonomousOrchestrator(registry)
+        orch._consecutive_errors = 3
+
+        # Run one successful iteration
+        iteration_count = 0
+        original_sleep = asyncio.sleep
+        async def _stop_after_one(seconds):
+            nonlocal iteration_count
+            iteration_count += 1
+            orch._is_running = False
+            await original_sleep(0)
+        asyncio.sleep = _stop_after_one
+        try:
+            orch._is_running = True
+            await orch._monitoring_loop(1, {})
+        finally:
+            asyncio.sleep = original_sleep
+
+        assert orch._consecutive_errors == 0

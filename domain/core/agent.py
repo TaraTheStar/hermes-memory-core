@@ -80,7 +80,7 @@ class HermesAgent(ABC):
 
         State transitions:
             IDLE -> THINKING -> ACTING -> REFLECTING -> REPORTING -> COMPLETED
-                    \____________any stage____________/ -> FAILED (on exception)
+                    \\____________any stage____________/ -> FAILED (on exception)
 
         Stages:
             THINKING:    _plan() decomposes the goal into sub-tasks.
@@ -117,8 +117,11 @@ class HermesAgent(ABC):
         except Exception as e:
             self.status = AgentStatus.FAILED
             self._log(f"Agent execution failed: {str(e)}", level="ERROR")
+            # Use only the exception type in the finding to avoid leaking
+            # internal details (file paths, DB schemas, connection strings)
+            # into semantic memory.
             return AgentResult(
-                finding=f"Execution failed: {str(e)}",
+                finding=f"Execution failed: {type(e).__name__}",
                 confidence=0.0,
                 evidence=[],
                 status=AgentStatus.FAILED

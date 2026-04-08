@@ -40,7 +40,11 @@ def test_min_similarity_filters_low_relevance(semantic_memory):
     semantic_memory.add_event("The cat sat on the mat", {"type": "test"})
     semantic_memory.add_event("Quantum physics equations", {"type": "test"})
 
-    # With a very high threshold, unrelated results should be filtered
-    results = semantic_memory.query("cat mat", n_results=10, min_similarity=0.99)
-    # Can't guarantee exact filtering with default embeddings, but shouldn't crash
-    assert isinstance(results, list)
+    # With min_similarity=1.0, no result can pass (similarity is always < 1.0
+    # for non-zero distance), so the list must be empty.
+    results_strict = semantic_memory.query("cat mat", n_results=10, min_similarity=1.0)
+    assert results_strict == [], "min_similarity=1.0 should filter out everything"
+
+    # With min_similarity=0.0, no result is filtered, so we get both events.
+    results_lax = semantic_memory.query("cat mat", n_results=10, min_similarity=0.0)
+    assert len(results_lax) == 2, "min_similarity=0.0 should return all events"

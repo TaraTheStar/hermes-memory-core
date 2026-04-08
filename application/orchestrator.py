@@ -18,6 +18,7 @@ class Orchestrator:
         self.registry = registry  # Maps role names to Agent classes
         self.llm = llm_interface
         self.active_agents: List[HermesAgent] = []
+        self._agents_lock = asyncio.Lock()
         self._max_concurrent_agents = 10
         self.ingestor = ingestor
         self.refinement_registry = refinement_registry or RefinementRegistry()
@@ -95,12 +96,12 @@ class Orchestrator:
             return [
                 {
                     "role": "researcher",
-                    "goal": "Conduct deep dive into: " + goal,
+                    "goal": "Conduct deep dive into: " + sanitize_field(goal, "goal"),
                     "constraints": ["provide high-confidence evidence"]
                 }
             ]
 
-        return [{"role": "researcher", "goal": goal, "constraints": []}]
+        return [{"role": "researcher", "goal": sanitize_field(goal, "goal"), "constraints": []}]
 
     async def run_goal(self, goal: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -138,16 +139,18 @@ class Orchestrator:
                 logger.warning("Unknown role: %s", role)
 
         # Snapshot local agents into the shared list for external visibility
-        self.active_agents.extend(local_agents)
+        async with self._agents_lock:
+            self.active_agents.extend(local_agents)
 
         # Execute all agents concurrently (bounded by semaphore)
         raw_results = await asyncio.gather(*agent_tasks)
 
         # Remove this invocation's completed/failed agents from the shared list
         finished = set(id(a) for a in local_agents)
-        self.active_agents = [
-            a for a in self.active_agents if id(a) not in finished
-        ]
+        async with self._agents_lock:
+            self.active_agents = [
+                a for a in self.active_agents if id(a) not in finished
+            ]
 
         # Synthesize findings
         final_report = self._synthesize(goal, raw_results)
@@ -191,7 +194,7 @@ class Orchestrator:
         except Exception as e:
             logger.error("Fatal error in agent %s: %s", agent.agent_id, e)
             return AgentResult(
-                finding=f"Agent failure: {str(e)}",
+                finding=f"Agent failure: {type(e).__name__}",
                 confidence=0.0,
                 evidence=[],
                 status=AgentStatus.FAILED
@@ -215,7 +218,7 @@ class Orchestrator:
                 "status": res.status
             })
             
-            if res.status in [AgentStatus.COMPLETED, AgentStatus.REPORTING]:
+            if res.status == AgentStatus.COMPLETED:
                 total_confidence += res.confidence
                 successful_agents += 1
 
@@ -259,17 +262,32 @@ class Orchestrator:
                     raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
                 
                 decision = json.loads(raw)
-                if decision.get("approved"):
-                    logger.info("Proposal APPROVED: %s", decision.get("reasoning"))
-                    # APPLY THE EVOLUTION
-                    self.refinement_registry.apply(proposal)
-                    logger.info("Applying evolution for %s...", proposal.target_component)
-                else:
+                if not isinstance(decision, dict):
+                    logger.warning("LLM returned non-dict for refinement evaluation — skipping.")
+                    continue
+                approved = decision.get("approved")
+                if approved is not True:
+                    # Strict bool — "maybe", 1, "true" etc. all rejected
                     logger.info("Proposal REJECTED: %s", decision.get("reasoning"))
+                    continue
+                logger.info("Proposal APPROVED: %s", decision.get("reasoning"))
+                self.refinement_registry.apply(proposal)
+                logger.info("Applying evolution for %s...", proposal.target_component)
             except Exception as e:
                 logger.warning("Failed to evaluate refinement proposal: %s", e)
 
     _META_REFLECTION_CONFIDENCE_THRESHOLD = 0.7
+
+    # Only these role names may be bootstrapped via meta-reflection.
+    # Prevents an adversarial LLM from registering arbitrary roles.
+    ALLOWED_BOOTSTRAP_ROLES = frozenset({
+        "analyst",
+        "validator",
+        "summarizer",
+        "investigator",
+        "fact_checker",
+        "correlator",
+    })
 
     async def _perform_meta_reflection(self, goal: str, report: Dict[str, Any]) -> None:
         """
@@ -326,12 +344,14 @@ class Orchestrator:
                 logger.warning("Meta-reflection: Invalid role name '%s' — must be alphanumeric/underscores.", role_name)
                 return
 
+            if role_name not in self.ALLOWED_BOOTSTRAP_ROLES:
+                logger.warning("Meta-reflection: Role '%s' not in ALLOWED_BOOTSTRAP_ROLES — rejected.", role_name)
+                return
+
             if role_name in self.registry:
                 logger.info("Meta-reflection: Suggested role '%s' already exists.", role_name)
                 return
 
-            # Bootstrap the new role using ResearcherAgent as a general-purpose base.
-            # A future iteration could select the base class from the suggestion.
             from domain.core.agents_impl import ResearcherAgent
             logger.warning(
                 "Meta-reflection: Bootstrapping role '%s' with ResearcherAgent as base. "

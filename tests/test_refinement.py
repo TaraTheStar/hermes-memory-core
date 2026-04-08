@@ -119,3 +119,25 @@ class TestContainsUnmitigatedVeto:
     def test_no_veto_words(self, tmp_path):
         orch = self._make_orchestrator(tmp_path)
         assert orch._contains_unmitigated_veto("Everything looks great") is False
+
+    def test_multi_sentence_negation_does_not_leak(self, tmp_path):
+        """Negation in one sentence should NOT negate a veto in a different sentence."""
+        orch = self._make_orchestrator(tmp_path)
+        # "not" is in the first sentence, but "reject" is in the second
+        assert orch._contains_unmitigated_veto(
+            "This is not a problem. I reject this proposal."
+        ) is True
+
+    def test_multi_sentence_all_negated(self, tmp_path):
+        """When every veto word is negated within its own sentence, return False."""
+        orch = self._make_orchestrator(tmp_path)
+        assert orch._contains_unmitigated_veto(
+            "I don't reject this. It should not be aborted."
+        ) is False
+
+    def test_veto_at_sentence_boundary(self, tmp_path):
+        """Veto word right at the start of a new sentence should be detected."""
+        orch = self._make_orchestrator(tmp_path)
+        assert orch._contains_unmitigated_veto(
+            "Looks fine overall. Abort this operation immediately!"
+        ) is True

@@ -16,8 +16,20 @@ class RefinementRegistry:
 
     _MAX_VALUE_LENGTH = 5000
 
-    def __init__(self, ledger=None):
+    # Only these target component names are accepted.  Anything not in this
+    # set is silently rejected to prevent LLM-influenced writes to arbitrary
+    # keys.  Extend this set when new refinable components are introduced.
+    ALLOWED_TARGETS = frozenset({
+        "researcher_prompt",
+        "auditor_prompt",
+        "auditor_tools",
+        "synthesis_prompt",
+        "refinement_prompt",
+    })
+
+    def __init__(self, ledger=None, allowed_targets=None):
         self._ledger = ledger
+        self._allowed_targets = frozenset(allowed_targets) if allowed_targets else self.ALLOWED_TARGETS
         # In-memory cache — always kept in sync with the DB when a ledger
         # is present.
         self._refinements: Dict[str, str] = {}
@@ -67,6 +79,9 @@ class RefinementRegistry:
 
         if not isinstance(target, str) or not target.strip():
             logger.warning("Rejecting refinement: invalid target %r", target)
+            return
+        if target not in self._allowed_targets:
+            logger.warning("Rejecting refinement: target %r not in allowed targets", target)
             return
         if not isinstance(value, str):
             logger.warning("Rejecting refinement: proposed_state is not a string")

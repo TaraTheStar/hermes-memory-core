@@ -1,5 +1,4 @@
 import os
-import shutil
 import pytest
 
 from application.engine import MemoryEngine
@@ -8,16 +7,11 @@ from domain.core.models import Event
 
 
 @pytest.fixture(scope="module")
-def test_paths():
-    db = "/tmp/hermes_test_structure.db"
-    semantic = "/tmp/hermes_test_semantic"
-
-    if os.path.exists(db):
-        os.remove(db)
-    if os.path.exists(semantic):
-        shutil.rmtree(semantic)
-    os.makedirs(semantic)
-
+def test_paths(tmp_path_factory):
+    base = tmp_path_factory.mktemp("structural_bridge")
+    db = str(base / "structure.db")
+    semantic = str(base / "semantic")
+    os.makedirs(semantic, exist_ok=True)
     return db, semantic
 
 

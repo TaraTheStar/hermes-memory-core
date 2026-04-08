@@ -3,10 +3,9 @@ from typing import Any, Optional
 from domain.core.acl.base import BaseTranslator
 from domain.core.events import InfrastructureErrorEvent, EventSeverity
 
-# Matches common API key patterns (sk-..., key-..., bearer tokens, hex strings 32+)
+# Matches common API key patterns (sk-..., key-..., bearer tokens, hex/alnum strings 32+)
 _SECRET_PATTERN = re.compile(
-    r'(sk-[a-zA-Z0-9]{20,}|key-[a-zA-Z0-9]{20,}|Bearer\s+\S{20,}|[a-f0-9]{32,})',
-    re.IGNORECASE,
+    r'(sk-[a-zA-Z0-9]{20,}|key-[a-zA-Z0-9]{20,}|Bearer\s+\S{20,}|[a-fA-F0-9]{32,}|[a-zA-Z0-9_-]{40,})',
 )
 
 

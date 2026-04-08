@@ -130,6 +130,6 @@ class RefinementEngine:
                     AnomalyModel.anomaly_type == event.pattern_type,
                     AnomalyModel.processed.is_(False),
                 ).first()
-                if existing and existing.trigger_data and existing.trigger_data.get("context_id") == ctx:
+                if existing and isinstance(existing.trigger_data, dict) and existing.trigger_data.get("context_id") == ctx:
                     continue
                 session.add(ContextualAnomalyDetector.to_anomaly_event(event))

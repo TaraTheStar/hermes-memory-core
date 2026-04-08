@@ -43,8 +43,8 @@ class AutonomousOrchestrator(Orchestrator, GoalRunner):
             logger.warning("Monitoring is already running.")
             return
 
-        self._is_running = True
         self._monitoring_task = asyncio.create_task(self._monitoring_loop(interval_seconds, context or {}))
+        self._is_running = True
         logger.info(f"Autonomous monitoring started with {interval_seconds}s interval.")
 
     async def stop_monitoring(self):
@@ -81,11 +81,12 @@ class AutonomousOrchestrator(Orchestrator, GoalRunner):
                                 from domain.core.prompt_sanitizer import sanitize_field
                                 goal = f"Investigate the recent semantic milestone: {sanitize_field(event['text'], 'event_text')}"
                                 logger.info(f"Trigger detected! New Goal: {goal}")
+                                await self.run_goal(goal, context)
+                                # Mark processed only after successful execution
                                 self._processed_event_ids[event_id] = None
                                 # Evict oldest IDs to prevent unbounded growth
                                 while len(self._processed_event_ids) > self._max_processed_ids:
                                     self._processed_event_ids.popitem(last=False)
-                                await self.run_goal(goal, context)
 
                 # 3. Check for structural changes
                 if self.structural_ledger:
@@ -105,7 +106,9 @@ class AutonomousOrchestrator(Orchestrator, GoalRunner):
                                     self._consecutive_errors)
                     self._is_running = False
                     break
-                await asyncio.sleep(interval_seconds)
+                # Exponential backoff capped at the normal interval
+                backoff = min(5 * (2 ** (self._consecutive_errors - 1)), interval_seconds)
+                await asyncio.sleep(backoff)
 
     async def run_goal(self, goal: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
