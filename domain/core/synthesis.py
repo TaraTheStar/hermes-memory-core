@@ -122,8 +122,8 @@ class SynthesisEngine:
                                 existing_edges.add(edge_key)
                                 new_edges_count += 1
 
-        self._last_temporal_scan = scan_start
         self._save_watermark(self._TEMPORAL_WATERMARK_KEY, scan_start)
+        self._last_temporal_scan = scan_start
         return new_edges_count
 
     def run_semantic_cooccurrence_scan(self, similarity_threshold: float = 0.7) -> int:
@@ -187,8 +187,8 @@ class SynthesisEngine:
                             existing_edges.add(edge_key)
                             new_edges_count += 1
 
-        self._last_cooccurrence_scan = scan_start
         self._save_watermark(self._COOCCURRENCE_WATERMARK_KEY, scan_start)
+        self._last_cooccurrence_scan = scan_start
         return new_edges_count
 
     def run_attribute_symmetry_scan(self) -> int:

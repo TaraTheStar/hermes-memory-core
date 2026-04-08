@@ -1,11 +1,12 @@
-"""Tests for ResearcherAgent and AuditorAgent edge case paths."""
+"""Tests for ResearcherAgent, AuditorAgent, and RefinementAgent edge case paths."""
+import json
 import os
 import tempfile
 import shutil
 import pytest
 from unittest.mock import MagicMock
-from domain.core.agents_impl import ResearcherAgent, AuditorAgent
-from domain.core.agent import AgentTask, AgentStatus
+from domain.core.agents_impl import ResearcherAgent, AuditorAgent, RefinementAgent
+from domain.core.agent import AgentTask, AgentStatus, RefinementProposal
 from domain.core.semantic_memory import SemanticMemory
 from domain.supporting.ledger import StructuralLedger
 from domain.core.models import Skill, RelationalEdge
@@ -49,7 +50,7 @@ async def test_auditor_no_ledger_error_finding():
     agent = AuditorAgent("a01", "auditor", MagicMock())
     result = await agent.run(AgentTask("check integrity"), {})
     assert "No structural ledger" in result.finding
-    assert result.confidence == 0.0
+    assert result.confidence <= 0.1
 
 
 @pytest.mark.asyncio
@@ -101,3 +102,93 @@ async def test_auditor_empty_ledger_low_confidence(ledger):
     result = await agent.run(AgentTask("audit"), {"structural_ledger": ledger})
     assert result.confidence <= 0.2
     assert "no entities" in result.finding.lower()
+
+
+# ── RefinementAgent tests ──────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_refinement_agent_no_proposal_in_context():
+    """RefinementAgent without a proposal in context should report an error."""
+    agent = RefinementAgent("ref01", "refinement", MagicMock())
+    result = await agent.run(AgentTask("evaluate proposal"), {})
+    assert "No active refinement proposal" in result.finding
+    assert result.confidence == 0.0
+
+
+@pytest.mark.asyncio
+async def test_refinement_agent_approved_proposal():
+    """RefinementAgent should report high confidence when LLM approves."""
+    mock_llm = MagicMock()
+    mock_llm.complete.return_value = json.dumps({
+        "approved": True,
+        "reasoning": "The change is safe and well-scoped."
+    })
+    proposal = RefinementProposal(
+        proposal_type="PROMPT_REFINEMENT",
+        target_component="researcher_prompt",
+        current_state="generic prompt",
+        proposed_state="specialized prompt",
+        rationale="improve accuracy"
+    )
+    agent = RefinementAgent("ref02", "refinement", mock_llm)
+    result = await agent.run(AgentTask("evaluate"), {"active_refinement_proposal": proposal})
+    assert "APPROVED" in result.finding
+    assert result.confidence == 0.95
+
+
+@pytest.mark.asyncio
+async def test_refinement_agent_rejected_proposal():
+    """RefinementAgent should report moderate confidence when LLM rejects."""
+    mock_llm = MagicMock()
+    mock_llm.complete.return_value = json.dumps({
+        "approved": False,
+        "reasoning": "The change is too risky."
+    })
+    proposal = RefinementProposal(
+        proposal_type="TOOL_EXPANSION",
+        target_component="auditor_tools",
+        current_state="current tools",
+        proposed_state="expanded tools",
+        rationale="need more audit capabilities"
+    )
+    agent = RefinementAgent("ref03", "refinement", mock_llm)
+    result = await agent.run(AgentTask("evaluate"), {"active_refinement_proposal": proposal})
+    assert "REJECTED" in result.finding
+    assert result.confidence == 0.5
+
+
+@pytest.mark.asyncio
+async def test_refinement_agent_llm_failure():
+    """RefinementAgent should handle LLM failures gracefully."""
+    mock_llm = MagicMock()
+    mock_llm.complete.side_effect = RuntimeError("LLM connection failed")
+    proposal = RefinementProposal(
+        proposal_type="PROMPT_REFINEMENT",
+        target_component="test",
+        current_state="a",
+        proposed_state="b",
+        rationale="reason"
+    )
+    agent = RefinementAgent("ref04", "refinement", mock_llm)
+    result = await agent.run(AgentTask("evaluate"), {"active_refinement_proposal": proposal})
+    assert "Critique failed" in result.finding
+    assert result.confidence == 0.0
+
+
+@pytest.mark.asyncio
+async def test_refinement_agent_llm_returns_markdown_fenced_json():
+    """RefinementAgent should strip markdown fences from LLM response."""
+    mock_llm = MagicMock()
+    mock_llm.complete.return_value = '```json\n{"approved": true, "reasoning": "looks good"}\n```'
+    proposal = RefinementProposal(
+        proposal_type="PROMPT_REFINEMENT",
+        target_component="test",
+        current_state="a",
+        proposed_state="b",
+        rationale="reason"
+    )
+    agent = RefinementAgent("ref05", "refinement", mock_llm)
+    result = await agent.run(AgentTask("evaluate"), {"active_refinement_proposal": proposal})
+    assert "APPROVED" in result.finding
+    assert result.confidence == 0.95

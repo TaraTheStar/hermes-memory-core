@@ -34,6 +34,8 @@ class AutonomousOrchestrator(Orchestrator, GoalRunner):
         self._is_running = False
         self._processed_event_ids: OrderedDict[str, None] = OrderedDict()
         self._max_processed_ids = 10000
+        self._consecutive_errors = 0
+        self._max_consecutive_errors = 5
 
     async def start_monitoring(self, interval_seconds: int = 300, context: Dict[str, Any] = None):
         """Starts the background monitoring loop."""
@@ -61,7 +63,7 @@ class AutonomousOrchestrator(Orchestrator, GoalRunner):
         while self._is_running:
             try:
                 logger.info("Scanning environment for triggers...")
-                
+
                 # 1. Check for anomalies via InsightTrigger
                 if self.insight_trigger:
                     await self.insight_trigger.process_new_anomalies(context)
@@ -74,7 +76,8 @@ class AutonomousOrchestrator(Orchestrator, GoalRunner):
                             event_id = event.get('id')
                             if event_id in self._processed_event_ids:
                                 continue
-                            if "milestone" in event['metadata'].get('type', '') or "integration" in event['text'].lower():
+                            metadata = event.get('metadata') or {}
+                            if "milestone" in metadata.get('type', '') or "integration" in event['text'].lower():
                                 from domain.core.prompt_sanitizer import sanitize_field
                                 goal = f"Investigate the recent semantic milestone: {sanitize_field(event['text'], 'event_text')}"
                                 logger.info(f"Trigger detected! New Goal: {goal}")
@@ -89,12 +92,20 @@ class AutonomousOrchestrator(Orchestrator, GoalRunner):
                     # Simulate a structural anomaly check
                     pass
 
+                self._consecutive_errors = 0
                 # Wait for the next interval
                 await asyncio.sleep(interval_seconds)
 
             except Exception as e:
-                logger.error(f"Error in monitoring loop: {e}")
-                await asyncio.sleep(interval_seconds) # Avoid rapid-fire error loops
+                self._consecutive_errors += 1
+                logger.error("Error in monitoring loop (%d/%d): %s",
+                             self._consecutive_errors, self._max_consecutive_errors, e)
+                if self._consecutive_errors >= self._max_consecutive_errors:
+                    logger.critical("Circuit breaker tripped: %d consecutive errors. Stopping monitoring.",
+                                    self._consecutive_errors)
+                    self._is_running = False
+                    break
+                await asyncio.sleep(interval_seconds)
 
     async def run_goal(self, goal: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """

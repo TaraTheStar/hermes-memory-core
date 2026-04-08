@@ -23,53 +23,66 @@ class InsightTrigger:
     async def process_new_anomalies(self, context: Optional[Dict[str, Any]] = None):
         """
         Fetches unhandled anomalies and triggers orchestration for each.
-        Each anomaly is committed independently so a failure on one does not
-        roll back progress on previously processed anomalies.
+        Each anomaly is claimed (marked processed) within its own session
+        before the goal runner is invoked, preventing duplicate processing
+        when concurrent callers race on the same anomaly.
         """
         context = context or {}
+
+        # Collect anomaly IDs and immediately mark them as processed in a
+        # single session to prevent TOCTOU races between concurrent callers.
+        anomaly_snapshots = []
         with self.ledger.session_scope() as session:
             unprocessed = session.query(AnomalyEvent).filter(
-                AnomalyEvent.processed == False
+                AnomalyEvent.processed.is_(False)
             ).order_by(AnomalyEvent.timestamp.desc()).limit(5).all()
-            anomaly_ids = [a.id for a in unprocessed]
 
-        if not anomaly_ids:
-            logger.info("No unprocessed anomalies to handle.")
-            return
+            if not unprocessed:
+                logger.info("No unprocessed anomalies to handle.")
+                return
 
-        logger.info("Found %d unprocessed anomalies. Generating investigation goals...", len(anomaly_ids))
+            for anomaly in unprocessed:
+                anomaly.processed = True
+                anomaly_snapshots.append({
+                    "id": anomaly.id,
+                    "anomaly_type": anomaly.anomaly_type,
+                    "description": anomaly.description,
+                    "trigger_data": dict(anomaly.trigger_data) if anomaly.trigger_data else {},
+                })
+            # Session commits here, atomically claiming all anomalies.
 
-        for anomaly_id in anomaly_ids:
-            with self.ledger.session_scope() as session:
-                anomaly = session.get(AnomalyEvent, anomaly_id)
-                if anomaly is None or anomaly.processed:
-                    continue
+        logger.info("Found %d unprocessed anomalies. Generating investigation goals...", len(anomaly_snapshots))
 
-                goal = self._generate_goal_from_anomaly(anomaly)
-                if goal:
-                    logger.info("Triggering goal runner with goal: '%s'", goal)
-                    try:
-                        await self.goal_runner.run_goal(goal, context)
-                    except Exception:
-                        logger.exception("Goal runner failed for anomaly %s", anomaly_id)
-                        # Mark as processed even on failure to prevent infinite retries.
-                        # A separate retry/dead-letter mechanism should handle persistent failures.
-                        anomaly.processed = True
-                        continue
-                    anomaly.processed = True
-                else:
-                    logger.warning("Could not generate goal for anomaly: %s — marking as processed to prevent retry loop.",
-                                   anomaly.anomaly_type)
-                    anomaly.processed = True
+        for snap in anomaly_snapshots:
+            goal = self._generate_goal_from_snapshot(snap)
+            if goal:
+                logger.info("Triggering goal runner with goal: '%s'", goal)
+                try:
+                    await self.goal_runner.run_goal(goal, context)
+                except Exception:
+                    logger.exception("Goal runner failed for anomaly %s", snap["id"])
+            else:
+                logger.warning("Could not generate goal for anomaly: %s — skipping.",
+                               snap["anomaly_type"])
 
     def _generate_goal_from_anomaly(self, anomaly: AnomalyEvent) -> str:
+        """Convenience wrapper for callers that have an ORM object."""
+        snap = {
+            "id": anomaly.id,
+            "anomaly_type": anomaly.anomaly_type,
+            "description": anomaly.description,
+            "trigger_data": dict(anomaly.trigger_data) if anomaly.trigger_data else {},
+        }
+        return self._generate_goal_from_snapshot(snap)
+
+    def _generate_goal_from_snapshot(self, snap: Dict[str, Any]) -> str:
         """
         Translates a structural event into a sophisticated natural language goal.
         User-controlled fields are wrapped via ``sanitize_field`` to prevent
         prompt boundary spoofing.
         """
-        a_type = anomaly.anomaly_type
-        data = anomaly.trigger_data or {}
+        a_type = snap["anomaly_type"]
+        data = snap.get("trigger_data") or {}
 
         if a_type == "HUB_EMERGENCE":
             node_id = sanitize_field(data.get("node_id", "Unknown Node"), "node_id")
@@ -90,5 +103,5 @@ class InsightTrigger:
 
         # Fallback generic goal
         safe_type = sanitize_field(a_type, "anomaly_type")
-        safe_desc = sanitize_field(anomaly.description, "description")
+        safe_desc = sanitize_field(snap.get("description", ""), "description")
         return f"Perform a deep structural audit in response to a detected {safe_type} event: {safe_desc}"

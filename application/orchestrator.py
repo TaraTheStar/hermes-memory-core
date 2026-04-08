@@ -64,7 +64,7 @@ class Orchestrator:
                         continue
                     if not isinstance(t.get("goal"), str) or not t["goal"]:
                         continue
-                    if "constraints" in t and not isinstance(t["constraints"], list):
+                    if "constraints" not in t or not isinstance(t["constraints"], list):
                         t["constraints"] = []
                     valid.append(t)
                 if valid:
@@ -120,6 +120,7 @@ class Orchestrator:
         # Prepare the agent coroutines for parallel execution
         semaphore = asyncio.Semaphore(self._max_concurrent_agents)
         agent_tasks = []
+        local_agents = []
 
         for i, task in enumerate(tasks):
             role = tasks_data[i]["role"]
@@ -127,7 +128,7 @@ class Orchestrator:
                 # Instantiate the agent
                 agent_id = f"{role}_{i:02d}"
                 agent_instance = self.registry[role](agent_id, role, self.llm)
-                self.active_agents.append(agent_instance)
+                local_agents.append(agent_instance)
 
                 logger.info("Spawning %s (%s)...", agent_instance.agent_id, role)
 
@@ -136,15 +137,16 @@ class Orchestrator:
             else:
                 logger.warning("Unknown role: %s", role)
 
+        # Snapshot local agents into the shared list for external visibility
+        self.active_agents.extend(local_agents)
+
         # Execute all agents concurrently (bounded by semaphore)
         raw_results = await asyncio.gather(*agent_tasks)
 
-        # Remove completed/failed agents to prevent memory leaks in long-running
-        # processes.  Only agents still mid-execution are retained.
-        active_statuses = {AgentStatus.THINKING, AgentStatus.ACTING,
-                           AgentStatus.REFLECTING, AgentStatus.REPORTING}
+        # Remove this invocation's completed/failed agents from the shared list
+        finished = set(id(a) for a in local_agents)
         self.active_agents = [
-            a for a in self.active_agents if a.status in active_statuses
+            a for a in self.active_agents if id(a) not in finished
         ]
 
         # Synthesize findings

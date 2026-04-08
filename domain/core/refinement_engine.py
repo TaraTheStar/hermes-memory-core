@@ -126,13 +126,10 @@ class RefinementEngine:
             for event in events:
                 # Build a deterministic key so the same anomaly isn't persisted twice.
                 ctx = event.metadata.get("context_id", "global")
-                dedup_key = f"{event.pattern_type}:{ctx}"
                 existing = session.query(AnomalyModel).filter(
                     AnomalyModel.anomaly_type == event.pattern_type,
-                    AnomalyModel.processed == False,
-                ).filter(
-                    AnomalyModel.description.contains(ctx)
+                    AnomalyModel.processed.is_(False),
                 ).first()
-                if existing:
+                if existing and existing.trigger_data and existing.trigger_data.get("context_id") == ctx:
                     continue
                 session.add(ContextualAnomalyDetector.to_anomaly_event(event))

@@ -52,11 +52,11 @@ class TestRefinementEngine:
         types = [p.proposal_type for p in proposals]
         assert "MERGE_COMMUNITY" in types
 
-    def test_detects_high_weight_edge(self, engine, ledger):
-        # The detector flags values *above* the threshold, so a high edge weight triggers PRUNE_EDGE
+    def test_detects_low_weight_edge(self, engine, ledger):
+        # The detector flags edge weights *below* the threshold as redundant
         s1 = ledger.add_skill("A", "a")
         s2 = ledger.add_skill("B", "b")
-        ledger.add_edge(s1, s2, "heavy", weight=5.0)
+        ledger.add_edge(s1, s2, "weak", weight=0.01)
 
         proposals = engine.analyze_for_refinement()
         types = [p.proposal_type for p in proposals]

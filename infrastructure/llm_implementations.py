@@ -40,6 +40,8 @@ class LocalLLMImplementation(BaseLLMInterface):
                 messages=messages,
                 temperature=0.7
             )
+            if not response.choices:
+                raise LLMInfrastructureError("LLM returned empty choices list")
             return self.translator.transform_data(response.choices[0].message.content)
         except Exception as e:
             event = self.translator.translate_exception(e)

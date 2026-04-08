@@ -1,7 +1,7 @@
 import uuid
 from typing import Dict, Any, Optional, List
 import math
-from domain.core.anomaly_config import MetricType, ThresholdProfile
+from domain.core.anomaly_config import MetricType, ThresholdProfile, BELOW_THRESHOLD_METRICS
 from domain.core.events import DomainEvent, EventSeverity, PatternDetectedEvent
 
 
@@ -42,7 +42,10 @@ class ContextualAnomalyDetector:
         if threshold is None:
             return None
 
-        is_anomaly = current_value > threshold * profile.sensitivity_multiplier
+        if metric_type in BELOW_THRESHOLD_METRICS:
+            is_anomaly = current_value < threshold / profile.sensitivity_multiplier
+        else:
+            is_anomaly = current_value > threshold * profile.sensitivity_multiplier
 
         if is_anomaly:
             return PatternDetectedEvent(

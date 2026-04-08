@@ -121,3 +121,62 @@ async def test_execute_agent_failure_returns_failed_result():
     # The failing agent should produce a FAILED finding
     assert result["orchestration_summary"]["agents_successful"] == 0
     assert any(f["status"] == AgentStatus.FAILED for f in result["agent_findings"])
+
+
+@pytest.mark.asyncio
+async def test_llm_decompose_missing_constraints_key():
+    """Tasks missing the 'constraints' key should default to empty list."""
+    tasks_json = json.dumps([
+        {"role": "researcher", "goal": "find stuff"}
+    ])
+    llm = _MockLLM(tasks_json)
+    orch = Orchestrator({"researcher": _SimpleAgent}, llm_interface=llm)
+    tasks = await orch.decompose_task("do it")
+    assert len(tasks) == 1
+    assert tasks[0]["constraints"] == []
+
+
+@pytest.mark.asyncio
+async def test_llm_decompose_constraints_non_list_coerced():
+    """Non-list constraints should be coerced to empty list."""
+    tasks_json = json.dumps([
+        {"role": "researcher", "goal": "find stuff", "constraints": "not a list"}
+    ])
+    llm = _MockLLM(tasks_json)
+    orch = Orchestrator({"researcher": _SimpleAgent}, llm_interface=llm)
+    tasks = await orch.decompose_task("do it")
+    assert len(tasks) == 1
+    assert tasks[0]["constraints"] == []
+
+
+@pytest.mark.asyncio
+async def test_llm_decompose_caps_at_max_concurrent():
+    """Should not return more tasks than _max_concurrent_agents."""
+    many_tasks = [{"role": "researcher", "goal": f"task {i}", "constraints": []} for i in range(15)]
+    llm = _MockLLM(json.dumps(many_tasks))
+    orch = Orchestrator({"researcher": _SimpleAgent}, llm_interface=llm)
+    orch._max_concurrent_agents = 5
+    tasks = await orch.decompose_task("do lots of things")
+    assert len(tasks) == 5
+
+
+@pytest.mark.asyncio
+async def test_llm_decompose_empty_goal_filtered():
+    """Tasks with empty goal strings should be filtered out."""
+    tasks_json = json.dumps([
+        {"role": "researcher", "goal": "", "constraints": []},
+        {"role": "researcher", "goal": "valid goal", "constraints": []}
+    ])
+    llm = _MockLLM(tasks_json)
+    orch = Orchestrator({"researcher": _SimpleAgent}, llm_interface=llm)
+    tasks = await orch.decompose_task("do it")
+    assert len(tasks) == 1
+    assert tasks[0]["goal"] == "valid goal"
+
+
+@pytest.mark.asyncio
+async def test_handle_refinement_proposals_no_llm():
+    """Should warn and return without error when no LLM is configured."""
+    orch = Orchestrator({"researcher": _SimpleAgent}, llm_interface=None)
+    # Should not raise — just logs a warning
+    await orch._handle_refinement_proposals([MagicMock()], {})

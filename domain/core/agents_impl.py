@@ -178,7 +178,7 @@ class AuditorAgent(HermesAgent):
 
         if errors:
             summary = f"Audit encountered errors: {'; '.join(errors)}"
-            confidence = 0.0
+            confidence = min(confidence, 0.1)
 
         # If no findings were processed at all, reflect that
         if not evidence and not errors:

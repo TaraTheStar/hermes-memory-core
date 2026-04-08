@@ -26,3 +26,7 @@ class ThresholdProfile:
     min_sample_size: int = 5
     # Metadata for debugging
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+# Metrics where anomaly means the value is BELOW the threshold (e.g. low edge weight = redundant)
+BELOW_THRESHOLD_METRICS = frozenset({MetricType.EDGE_WEIGHT})

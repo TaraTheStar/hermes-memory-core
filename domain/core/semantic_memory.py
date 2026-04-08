@@ -152,6 +152,8 @@ class SemanticMemory:
             return 0.0
         if len(res1['embeddings']) == 0 or len(res2['embeddings']) == 0:
             return 0.0
+        if res1['embeddings'][0] is None or res2['embeddings'][0] is None:
+            return 0.0
 
         emb1 = np.array(res1['embeddings'][0])
         emb2 = np.array(res2['embeddings'][0])

@@ -88,13 +88,21 @@ class RefinementOrchestrator:
 
         return True
 
+    _SENTENCE_BOUNDARY = re.compile(r'[.!?]\s+')
+
     def _contains_unmitigated_veto(self, text: str) -> bool:
-        """Returns True if text contains a veto phrase NOT preceded by a negation."""
+        """Returns True if text contains a veto phrase NOT negated within the same clause."""
         for match in self._VETO_PHRASES.finditer(text):
-            # Check the 30 characters before the match for a negation word
-            start = max(0, match.start() - 30)
-            preceding = text[start:match.start()]
-            if not self._NEGATION_PREFIX.search(preceding):
+            # Find the sentence containing the veto phrase by locating
+            # the nearest sentence boundary before and after the match.
+            sentence_start = 0
+            for boundary in self._SENTENCE_BOUNDARY.finditer(text):
+                if boundary.end() <= match.start():
+                    sentence_start = boundary.end()
+                else:
+                    break
+            clause = text[sentence_start:match.end()]
+            if not self._NEGATION_PREFIX.search(clause):
                 return True
         return False
 

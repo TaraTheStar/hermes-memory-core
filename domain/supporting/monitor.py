@@ -160,15 +160,19 @@ class SnapshotAnomalyDetector:
             for node_id, node_metrics in current_snapshot.centrality_metrics.items():
                 current_degree = node_metrics.get('degree', 0.0)
                 
-                # Extract degree history for this specific node
+                # Extract degree history for this specific node, including current snapshot
                 node_history_degrees = []
                 node_history_ts = []
+                base_ts = self._normalize_ts(history[0].timestamp)
                 for snap in history:
                     hist_metrics = snap.centrality_metrics.get(node_id, {})
                     if hist_metrics:
                         node_history_degrees.append(hist_metrics.get('degree', 0.0))
-                        node_history_ts.append((self._normalize_ts(snap.timestamp) - self._normalize_ts(history[0].timestamp)).total_seconds())
-                
+                        node_history_ts.append((self._normalize_ts(snap.timestamp) - base_ts).total_seconds())
+                # Include the current snapshot in the regression
+                node_history_degrees.append(current_degree)
+                node_history_ts.append((self._normalize_ts(current_snapshot.timestamp) - base_ts).total_seconds())
+
                 if len(node_history_degrees) >= 3:
                     x = np.array(node_history_ts)
                     y = np.array(node_history_degrees)
