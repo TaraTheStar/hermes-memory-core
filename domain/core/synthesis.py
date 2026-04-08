@@ -11,6 +11,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_SYMMETRY_KEYWORDS: Set[str] = {'python', 'javascript', 'rust', 'coding'}
 
 class SynthesisEngine:
+    _TEMPORAL_WATERMARK_KEY = "_synthesis_last_temporal_scan"
+    _COOCCURRENCE_WATERMARK_KEY = "_synthesis_last_cooccurrence_scan"
+
     def __init__(self, semantic_dir: str, structural_db_path_or_ledger,
                  symmetry_keywords: Optional[Set[str]] = None):
         self.semantic_memory = SemanticMemory(semantic_dir)
@@ -19,9 +22,26 @@ class SynthesisEngine:
         else:
             self.ledger = StructuralLedger(structural_db_path_or_ledger)
         self.symmetry_keywords = symmetry_keywords if symmetry_keywords is not None else DEFAULT_SYMMETRY_KEYWORDS
-        # High-water marks for incremental scanning (per scan type)
-        self._last_temporal_scan: Optional[datetime] = None
-        self._last_cooccurrence_scan: Optional[datetime] = None
+        # High-water marks for incremental scanning (per scan type).
+        # Loaded from the DB on init so they survive restarts.
+        self._last_temporal_scan: Optional[datetime] = self._load_watermark(self._TEMPORAL_WATERMARK_KEY)
+        self._last_cooccurrence_scan: Optional[datetime] = self._load_watermark(self._COOCCURRENCE_WATERMARK_KEY)
+
+    def _load_watermark(self, key: str) -> Optional[datetime]:
+        """Load a scan watermark from the structural ledger."""
+        with self.ledger.session_scope() as session:
+            marker = session.query(IdentityMarker).filter_by(key=key).first()
+            if marker and marker.value:
+                try:
+                    ts = datetime.fromisoformat(marker.value)
+                    return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+                except (ValueError, TypeError):
+                    return None
+        return None
+
+    def _save_watermark(self, key: str, value: datetime) -> None:
+        """Persist a scan watermark to the structural ledger."""
+        self.ledger.set_identity_marker(key, value.isoformat(), confidence=1.0)
  
     def run_temporal_correlation_scan(self, window_minutes: int = 60) -> int:
         """
@@ -103,6 +123,7 @@ class SynthesisEngine:
                                 new_edges_count += 1
 
         self._last_temporal_scan = scan_start
+        self._save_watermark(self._TEMPORAL_WATERMARK_KEY, scan_start)
         return new_edges_count
 
     def run_semantic_cooccurrence_scan(self, similarity_threshold: float = 0.7) -> int:
@@ -167,6 +188,7 @@ class SynthesisEngine:
                             new_edges_count += 1
 
         self._last_cooccurrence_scan = scan_start
+        self._save_watermark(self._COOCCURRENCE_WATERMARK_KEY, scan_start)
         return new_edges_count
 
     def run_attribute_symmetry_scan(self) -> int:

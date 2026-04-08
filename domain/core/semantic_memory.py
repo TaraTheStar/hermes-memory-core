@@ -95,21 +95,23 @@ class SemanticMemory:
                 
         return formatted_results
 
+    _MAX_LIST_FETCH = 5000
+
     def list_events(self, limit: int = 10, context_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Lists the most recent events, optionally scoped to a bounded context.
         Results are sorted by timestamp descending (most recent first).
 
-        ChromaDB's ``get()`` does not guarantee ordering, so we fetch the
-        entire collection and sort in Python.  For very large collections a
-        timestamp-indexed external store would be more efficient, but this is
-        correct for the current scale.
+        ChromaDB's ``get()`` does not guarantee ordering, so we fetch up to
+        ``_MAX_LIST_FETCH`` events and sort in Python.  This caps memory usage
+        while still being correct for typical collection sizes.
         """
         total = self.collection.count()
         if total == 0:
             return []
 
-        results = self.collection.get(limit=total)
+        fetch_count = min(total, self._MAX_LIST_FETCH)
+        results = self.collection.get(limit=fetch_count)
         formatted_results = []
         for i in range(len(results['ids'])):
             metadata = results['metadatas'][i]

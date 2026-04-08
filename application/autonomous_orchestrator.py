@@ -5,6 +5,7 @@ from typing import Dict, Any, List, Optional, Set, Type
 from application.orchestrator import Orchestrator
 from domain.core.agent import HermesAgent, AgentStatus
 from domain.core.ports import GoalRunner
+from domain.core.ports.ingestor import IntelligenceIngestor
 from domain.core.refinement_registry import RefinementRegistry
 from domain.core.semantic_memory import SemanticMemory
 from domain.core.insight_trigger import InsightTrigger
@@ -20,10 +21,12 @@ class AutonomousOrchestrator(Orchestrator, GoalRunner):
     def __init__(self, registry: Dict[str, Type[HermesAgent]], llm_interface=None,
                  semantic_memory: Optional[SemanticMemory] = None,
                  structural_ledger: Optional[StructuralLedger] = None,
-                 insight_trigger: Optional[InsightTrigger] = None):
+                 insight_trigger: Optional[InsightTrigger] = None,
+                 ingestor: Optional[IntelligenceIngestor] = None):
         # Wire up a persistent RefinementRegistry when a ledger is available
         refinement_registry = RefinementRegistry(structural_ledger) if structural_ledger else None
-        super().__init__(registry, llm_interface, refinement_registry=refinement_registry)
+        super().__init__(registry, llm_interface, ingestor=ingestor,
+                         refinement_registry=refinement_registry)
         self.semantic_memory = semantic_memory
         self.structural_ledger = structural_ledger
         self.insight_trigger = insight_trigger

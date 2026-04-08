@@ -5,6 +5,7 @@ from domain.supporting.ledger import StructuralLedger
 from application.orchestrator import Orchestrator
 from domain.core.refinement_engine import RefinementEngine, GraphRefinementProposal
 from domain.core.refinement_registry import RefinementRegistry
+from domain.core.prompt_sanitizer import sanitize_field
 from domain.core.models import Skill, RelationalEdge
 from domain.core.anomaly_detector import ContextualAnomalyDetector
 
@@ -40,7 +41,9 @@ class RefinementOrchestrator:
             logger.info("Processing: %s (%s)", proposal.proposal_type, proposal.description)
             
             # 1. Audit Phase: Delegate to an Auditor to ensure we don't break the graph
-            audit_goal = f"Audit the following proposed graph change for structural integrity: {proposal.description}. Data: {proposal.data}"
+            safe_desc = sanitize_field(proposal.description, "description")
+            safe_data = sanitize_field(str(proposal.data), "data")
+            audit_goal = f"Audit the following proposed graph change for structural integrity: {safe_desc}. Data: {safe_data}"
             audit_result = await self.orchestrator.run_goal(audit_goal, {})
             
             # Check if the Auditor approved (Simulated logic for prototype)

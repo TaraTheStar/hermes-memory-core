@@ -94,17 +94,23 @@ class SnapshotAnomalyDetector:
         
         y = np.array(y)
         
+        # Guard against degenerate x-arrays (all-identical timestamps)
+        # which cause polyfit to produce NaN.
+        if np.ptp(x) == 0:
+            mean_y = float(np.mean(y))
+            return {"expected": max(0.0, mean_y), "uncertainty": 0.0, "velocity": 0.0}
+
         # Linear regression: y = mx + c
         m, c = np.polyfit(x, y, 1)
-        
+
         # Predict for current time
         current_x = (current_ts - start_ts).total_seconds()
         prediction = m * current_x + c
-        
+
         # Uncertainty based on standard error of the estimate
         residuals = y - (m * x + c)
         uncertainty = np.std(residuals) if len(residuals) > 1 else 0.0
-        
+
         return {"expected": max(0.0, prediction), "uncertainty": uncertainty, "velocity": m}
 
     def detect_anomalies(self, current_snapshot: any) -> list:
@@ -166,11 +172,16 @@ class SnapshotAnomalyDetector:
                 if len(node_history_degrees) >= 3:
                     x = np.array(node_history_ts)
                     y = np.array(node_history_degrees)
+
+                    # Skip degenerate x-arrays (identical timestamps produce NaN)
+                    if np.ptp(x) == 0:
+                        continue
+
                     m, c = np.polyfit(x, y, 1)
-                    
+
                     # Detect Acceleration: Is the degree increasing non-linearly?
                     # For simplicity here, we'll trigger if velocity is exceptionally high
-                    if m > (self.sensitivity * 0.5): 
+                    if m > (self.sensitivity * 0.5):
                         anomalies.append(AnomalyEvent(
                             id=str(uuid.uuid4()),
                             anomaly_type="STRUCTURAL_ACCELERATION",

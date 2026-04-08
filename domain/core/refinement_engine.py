@@ -114,7 +114,25 @@ class RefinementEngine:
 
 
     def _persist_anomaly_events(self, events) -> None:
-        """Write PatternDetectedEvents as AnomalyEvent rows."""
+        """Write PatternDetectedEvents as AnomalyEvent rows.
+
+        Uses a deduplication key based on pattern_type + context_id to prevent
+        duplicate anomaly rows when ``analyze_for_refinement`` is called
+        multiple times for the same graph state.
+        """
+        from domain.supporting.monitor_models import AnomalyEvent as AnomalyModel
+
         with self.ledger.session_scope() as session:
             for event in events:
+                # Build a deterministic key so the same anomaly isn't persisted twice.
+                ctx = event.metadata.get("context_id", "global")
+                dedup_key = f"{event.pattern_type}:{ctx}"
+                existing = session.query(AnomalyModel).filter(
+                    AnomalyModel.anomaly_type == event.pattern_type,
+                    AnomalyModel.processed == False,
+                ).filter(
+                    AnomalyModel.description.contains(ctx)
+                ).first()
+                if existing:
+                    continue
                 session.add(ContextualAnomalyDetector.to_anomaly_event(event))
