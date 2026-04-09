@@ -1,4 +1,4 @@
-# Hermes Memory Core
+# Hermes Memory Engine
 
 A dual-layer memory engine that combines relational fact storage with vector-based semantic search. Hermes bridges structured knowledge (projects, milestones, skills, identity markers) with unstructured semantic events, enabling rich contextual recall and graph-based insight generation.
 
@@ -19,7 +19,7 @@ Requires Python 3.10+.
 
 ```bash
 git clone <repo-url>
-cd hermes-memory-core
+cd hermes-memory-engine
 pip install -e .
 ```
 

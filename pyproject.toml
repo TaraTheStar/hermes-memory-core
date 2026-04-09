@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "hermes-memory-core"
+name = "hermes-memory-engine"
 version = "0.1.0"
 description = "Core logic for the Hermes Memory Engine, including the Structural Ledger and Semantic Memory layers."
 license = "AGPL-3.0-or-later"
