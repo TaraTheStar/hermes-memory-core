@@ -4,8 +4,8 @@ import json
 import pytest
 import tempfile
 import shutil
-import sys
 from unittest.mock import MagicMock, AsyncMock, patch
+import sys
 
 # Add the repository to the path so imports work
 sys.path.append(os.path.abspath("repos/hermes-memory-library"))
@@ -90,9 +90,8 @@ async def test_continuity_of_agency():
         # Set up the new orchestrator with the new registry and the mock LLM
         # Note: We pass the mock_llm via the interface
         orchestrator = Orchestrator(
-            registry={}, # Use empty dict for registry initially
-            llm_interface=mock_llm,
-            refinement_registry=new_registry
+            registry=new_registry,
+            llm_interface=mock_llm
         )
         
         # Register the researcher role so the orchestrator knows what to spawn
@@ -101,7 +100,7 @@ async def test_continuity_of_agency():
         # Execute a mundane goal
         goal = "Tell me about entropy."
         print(f"[Continuity] Running goal: '{goal}'")
-        await orchestrator.run_goal(goal, {})
+        await orchestrator.run_goal(goal)
         
         # 5. Verification
         print("[Continuity] Verifying if the biological lens was injected into the LLM prompt...")

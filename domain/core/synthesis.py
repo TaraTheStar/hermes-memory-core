@@ -1,5 +1,6 @@
 import logging
 import re
+import json
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional, Set
 from domain.core.semantic_memory import SemanticMemory
@@ -13,7 +14,9 @@ DEFAULT_SYMMETRY_KEYWORDS: Set[str] = {'python', 'javascript', 'rust', 'coding'}
 class SynthesisEngine:
     _TEMPORAL_WATERMARK_KEY = "_synthesis_last_temporal_scan"
     _COOCCURRENCE_WATERMARK_KEY = "_synthesis_last_cooccurrence_scan"
-
+    _SYMMETRY_KEYWORDS_KEY = "_synthesis_symmetry_keywords"
+    _MOTIF_WATERMARK_KEY = "_synthesis_last_motif_scan"
+    _MOTIF_PATTERN_KEY = "_synthesis_discovered_motifs"
     def __init__(self, semantic_dir: str, structural_db_path_or_ledger,
                  symmetry_keywords: Optional[Set[str]] = None):
         self.semantic_memory = SemanticMemory(semantic_dir)
@@ -21,11 +24,62 @@ class SynthesisEngine:
             self.ledger = structural_db_path_or_ledger
         else:
             self.ledger = StructuralLedger(structural_db_path_or_ledger)
-        self.symmetry_keywords = symmetry_keywords if symmetry_keywords is not None else DEFAULT_SYMMETRY_KEYWORDS
+        
+        # Load symmetry keywords from persistent storage, fallback to provided or defaults
+        self.symmetry_keywords = self._load_keywords()
+        if not self.symmetry_keywords:
+            if symmetry_keywords is not None:
+                self.symmetry_keywords = symmetry_keywords
+            else:
+                self.symmetry_keywords = DEFAULT_SYMMETRY_KEYWORDS
+                self._save_keywords(self.symmetry_keywords)
+
         # High-water marks for incremental scanning (per scan type).
-        # Loaded from the DB on init so they survive restarts.
         self._last_temporal_scan: Optional[datetime] = self._load_watermark(self._TEMPORAL_WATERMARK_KEY)
         self._last_cooccurrence_scan: Optional[datetime] = self._load_watermark(self._COOCCURRENCE_WATERMARK_KEY)
+        self._last_motif_scan: Optional[datetime] = self._load_watermark(self._MOTIF_WATERMARK_KEY)
+
+        # Load discovered motifs
+        self.discovered_motifs = self._load_motifs()
+
+    def _load_keywords(self) -> Optional[Set[str]]:
+        """Load symmetry keywords from the structural ledger."""
+        with self.ledger.session_scope() as session:
+            marker = session.query(IdentityMarker).filter_by(key=self._SYMMETRY_KEYWORDS_KEY).first()
+            if marker and marker.value:
+                try:
+                    keywords = json.loads(marker.value)
+                    return set(keywords)
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.warning("Failed to parse symmetry keywords from ledger: %s", e)
+        return None
+
+    def _save_keywords(self, keywords: Set[str]) -> None:
+        """Persist symmetry keywords to the structural ledger."""
+        self.ledger.set_identity_marker(self._SYMMETRY_KEYWORDS_KEY, json.dumps(list(keywords)), confidence=1.0)
+
+    def add_symmetry_keywords(self, new_keywords: Set[str]) -> None:
+        """Dynamically add new discovered motifs to the symmetry engine."""
+        if not new_keywords:
+            return
+        self.symmetry_keywords.update(new_keywords)
+        self._save_keywords(self.symmetry_keywords)
+        logger.info("Promoted new symmetry keywords: %s", new_keywords)
+
+    def _load_motifs(self) -> List[Dict[str, Any]]:
+        """Load discovered structural motifs from the ledger."""
+        with self.ledger.session_scope() as session:
+            marker = session.query(IdentityMarker).filter_by(key=self._MOTIF_PATTERN_KEY).first()
+            if marker and marker.value:
+                try:
+                    return json.loads(marker.value)
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.warning("Failed to parse discovered motifs: %s", e)
+        return []
+
+    def _save_motifs(self, motifs: List[Dict[str, Any]]) -> None:
+        """Persist discovered structural motifs to the ledger."""
+        self.ledger.set_identity_marker(self._MOTIF_PATTERN_KEY, json.dumps(motifs), confidence=1.0)
 
     def _load_watermark(self, key: str) -> Optional[datetime]:
         """Load a scan watermark from the structural ledger."""
@@ -42,12 +96,15 @@ class SynthesisEngine:
     def _save_watermark(self, key: str, value: datetime) -> None:
         """Persist a scan watermark to the structural ledger."""
         self.ledger.set_identity_marker(key, value.isoformat(), confidence=1.0)
- 
-    def run_temporal_correlation_scan(self, window_minutes: int = 60) -> int:
+
+    def run_temporal_correlation_scan(self, window_minutes: int = 60, similarity_threshold: float = 0.6) -> int:
         """
         Scans for entities that appear close together in time.
         If a semantic event occurs near a structural entity, we infer a relationship.
         Only processes events newer than the last scan (incremental).
+        
+        Phase A: Temporal Semantic Correlation
+        We check if the event and the milestone are semantically similar AND temporally close.
         """
         new_edges_count = 0
         window_delta = timedelta(minutes=window_minutes)
@@ -60,7 +117,6 @@ class SynthesisEngine:
             events = self.semantic_memory.list_events(limit=100)
 
             # Pre-load existing temporal_context edges into a set for O(1) lookup.
-            # Store both directions so (A,B) and (B,A) are treated as the same edge.
             existing_edges: set = set()
             for e in session.query(
                 RelationalEdge.source_id, RelationalEdge.target_id
@@ -77,28 +133,55 @@ class SynthesisEngine:
                 except (ValueError, TypeError) as e:
                     logger.warning("Skipping event with invalid timestamp: %s", e)
                     continue
-                # Normalize to UTC-aware datetime for consistent comparison
+                
                 event_time = event_time_raw if event_time_raw.tzinfo else event_time_raw.replace(tzinfo=timezone.utc)
 
                 # Skip events already processed in a previous scan
                 if self._last_temporal_scan and event_time < self._last_temporal_scan:
                     continue
-                event_text = event.get('text', '').lower()
+                
+                event_text = event.get('text', '')
+                event_id = event['id']
 
                 # Check against milestones
                 for ms in milestones:
                     ms_time = ms.timestamp if ms.timestamp.tzinfo else ms.timestamp.replace(tzinfo=timezone.utc)
+                    
+                    # 1. Temporal Check
                     if abs((event_time - ms_time).total_seconds()) <= window_delta.total_seconds():
-                        if ms.title.lower() in event_text or (ms.description and ms.description.lower() in event_text):
-                            edge_key = (ms.id, event['id'])
+                        
+                        # 2. Semantic Check (The Bridge)
+                        # We check similarity between the event text and the milestone title/description
+                        # Instead of just string matching, we use the semantic memory to compare.
+                        # We'll create a temporary query or use the embedding-based similarity.
+                        # Since get_similarity requires two event IDs, we'll perform a quick query 
+                        # or use the text-to-embedding similarity if available.
+                        # For now, we use the event_text against the milestone context.
+                        
+                        # Optimization: If string match exists, it's a high-confidence semantic match.
+                        if ms.title.lower() in event_text.lower() or (ms.description and ms.description.lower() in event_text.lower()):
+                            similarity = 1.0
+                        else:
+                            # Perform a semantic similarity check
+                            # We simulate a milestone as a virtual event to use get_similarity logic
+                            # or more simply, query the semantic memory with the milestone title.
+                            query_results = self.semantic_memory.query(ms.title, n_results=1, min_similarity=similarity_threshold)
+                            
+                            # If the event is one of the top semantic matches for the milestone, it's a hit.
+                            # (This is a slightly indirect way but works well with the current API)
+                            is_semantic_match = any(res['id'] == event_id for res in query_results)
+                            similarity = 1.0 if is_semantic_match else 0.0
+
+                        if similarity >= similarity_threshold:
+                            edge_key = (ms.id, event_id)
                             if edge_key not in existing_edges:
                                 try:
                                     nested = session.begin_nested()
                                     self.ledger.add_edge(
                                         source_id=ms.id,
-                                        target_id=event['id'],
+                                        target_id=event_id,
                                         relationship_type="temporal_context",
-                                        weight=0.5,
+                                        weight=similarity,
                                         session=session
                                     )
                                     nested.commit()
@@ -106,25 +189,34 @@ class SynthesisEngine:
                                     new_edges_count += 1
                                 except Exception as e:
                                     nested.rollback()
-                                    logger.warning("Failed to add temporal edge %s->%s: %s", ms.id, event['id'], e)
+                                    logger.warning("Failed to add temporal edge %s->%s: %s", ms.id, event_id, e)
 
                 # Check against skills
                 for sk in skills:
                     if sk.last_used is None:
-                        continue  # Skip skills that have never been used
+                        continue 
                     sk_time = sk.last_used
                     sk_time = sk_time if sk_time.tzinfo else sk_time.replace(tzinfo=timezone.utc)
+                    
                     if abs((event_time - sk_time).total_seconds()) <= window_delta.total_seconds():
-                        if sk.name.lower() in event_text:
-                            edge_key = (sk.id, event['id'])
+                        # Semantic check for skills
+                        if sk.name.lower() in event_text.lower():
+                            similarity = 1.0
+                        else:
+                            query_results = self.semantic_memory.query(sk.name, n_results=1, min_similarity=similarity_threshold)
+                            is_semantic_match = any(res['id'] == event_id for res in query_results)
+                            similarity = 1.0 if is_semantic_match else 0.0
+
+                        if similarity >= similarity_threshold:
+                            edge_key = (sk.id, event_id)
                             if edge_key not in existing_edges:
                                 try:
                                     nested = session.begin_nested()
                                     self.ledger.add_edge(
                                         source_id=sk.id,
-                                        target_id=event['id'],
+                                        target_id=event_id,
                                         relationship_type="temporal_context",
-                                        weight=0.5,
+                                        weight=similarity,
                                         session=session
                                     )
                                     nested.commit()
@@ -132,7 +224,7 @@ class SynthesisEngine:
                                     new_edges_count += 1
                                 except Exception as e:
                                     nested.rollback()
-                                    logger.warning("Failed to add temporal edge %s->%s: %s", sk.id, event['id'], e)
+                                    logger.warning("Failed to add temporal edge %s->%s: %s", sk.id, event_id, e)
 
             self._save_watermark(self._TEMPORAL_WATERMARK_KEY, scan_start)
             self._last_temporal_scan = scan_start
@@ -209,49 +301,72 @@ class SynthesisEngine:
             self._last_cooccurrence_scan = scan_start
         return new_edges_count
 
-    def run_attribute_symmetry_scan(self) -> int:
+    def run_motif_detection_scan(self) -> int:
         """
-        Scans for entities that share similar metadata attributes.
+        Scans for recurring structural patterns (motifs) in the relational graph.
+        
+        Phase C: The Weaver's Intelligence
+        Identifies chains of relationships that appear with high frequency.
         """
-        new_edges_count = 0
+        new_motifs_count = 0
+        scan_start = datetime.now(timezone.utc)
+
         with self.ledger.session_scope() as session:
-            skills = session.query(Skill).all()
+            # 1. Fetch all recent edges to analyze local graph structure
+            edges = session.query(RelationalEdge).all()
+            if len(edges) < 3:
+                return 0
 
-            # Pre-load existing attribute_symmetry edges for O(1) lookup.
-            # Store both directions so (A,B) and (B,A) are treated as the same edge.
-            existing_edges: set = set()
-            for e in session.query(
-                RelationalEdge.source_id, RelationalEdge.target_id
-            ).filter_by(relationship_type="attribute_symmetry").all():
-                existing_edges.add((e.source_id, e.target_id))
-                existing_edges.add((e.target_id, e.source_id))
+            # 2. Build an adjacency list for path traversal
+            adj = {}
+            for e in edges:
+                if e.source_id not in adj:
+                    adj[e.source_id] = []
+                adj[e.source_id].append({
+                    "target": e.target_id,
+                    "type": e.relationship_type,
+                    "weight": e.weight
+                })
 
-            for i in range(len(skills)):
-                for j in range(i + 1, len(skills)):
-                    s1, s2 = skills[i], skills[j]
-                    name1, name2 = s1.name.lower(), s2.name.lower()
-                    words1 = set(re.findall(r'\w+', name1))
-                    words2 = set(re.findall(r'\w+', name2))
-                    common_words = words1.intersection(words2)
+            # 3. Identify "Chains" (e.g., A -> B -> C)
+            # We look for common paths of relationship types.
+            # Example path: ["temporal_context", "semantic_similarity"]
+            path_counts = {}
 
-                    if common_words.intersection(self.symmetry_keywords) or \
-                       name1 in name2 or name2 in name1:
-                        edge_key = (s1.id, s2.id)
-                        if edge_key not in existing_edges:
-                            try:
-                                nested = session.begin_nested()
-                                self.ledger.add_edge(
-                                    source_id=s1.id,
-                                    target_id=s2.id,
-                                    relationship_type="attribute_symmetry",
-                                    weight=0.8,
-                                    session=session
-                                )
-                                nested.commit()
-                                existing_edges.add(edge_key)
-                                new_edges_count += 1
-                            except Exception as e:
-                                nested.rollback()
-                                logger.warning("Failed to add symmetry edge %s->%s: %s", s1.id, s2.id, e)
+            for start_node in adj:
+                for step1 in adj[start_node]:
+                    target_b = step1["target"]
+                    type1 = step1["type"]
+                    
+                    if target_b in adj:
+                        for step2 in adj[target_b]:
+                            type2 = step2["type"]
+                            target_c = step2["target"]
+                            
+                            # We found a chain: start_node -> target_b -> target_c
+                            # The pattern is (type1, type2)
+                            pattern = (type1, type2)
+                            path_counts[pattern] = path_counts.get(pattern, 0) + 1
 
-        return new_edges_count
+            # 4. Promote high-frequency paths to Motifs
+            # If a pattern appears more than 5 times, it's a structural motif.
+            MOTIF_THRESHOLD = 5
+            for pattern, count in path_counts.items():
+                if count >= MOTIF_THRESHOLD:
+                    pattern_str = " -> ".join(pattern)
+                    # Check if we already know this motif
+                    if not any(m['pattern'] == pattern_str for m in self.discovered_motifs):
+                        new_motif = {
+                            "pattern": pattern_str,
+                            "frequency": count,
+                            "discovered_at": datetime.now(timezone.utc).isoformat()
+                        }
+                        self.discovered_motifs.append(new_motif)
+                        self._save_motifs(self.discovered_motifs)
+                        new_motifs_count += 1
+                        logger.info("Discovered new structural motif: %s", pattern_str)
+
+            self._save_watermark(self._MOTIF_WATERMARK_KEY, scan_start)
+            self._last_motif_scan = scan_start
+
+        return new_motifs_count
